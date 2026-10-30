@@ -8,7 +8,7 @@
   if (window.__prestaloAsistente) return;
   window.__prestaloAsistente = true;
 
-  var BRAND = '#194136', BRAND2 = '#237A5F';
+  var BRAND = '#0E8F86', BRAND2 = '#16b8a8';
   var historial = [];           // {rol:'usuario'|'asistente', texto}
   var abierto = false, cargando = false;
 

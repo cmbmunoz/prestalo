@@ -111,7 +111,6 @@ async function boot() {
   $('#app').classList.remove('hidden');
   $('#whoName').textContent = ME.user.nombre;
   $('#whoRole').textContent = ({alumno:'Alumno',docente:'Docente',panolero:'Pañolero',admin:'Administrador'})[ME.user.rol];
-  document.body.dataset.rol = ME.user.rol;   // color institucional según el perfil que ingresa
   buildNav();
   render(MENUS[ME.user.rol][0][0]);
 }
@@ -323,7 +322,7 @@ function topChart(top){
 }
 
 function invChart(inv){
-  const COL = {disponible:'#1C7A46', prestado:'#2A8C86', reservado:'#B07209', mantencion:'#E8590C', baja:'#9AA7B4'};
+  const COL = {disponible:'#1C7A46', prestado:'#0E8F86', reservado:'#B07209', mantencion:'#E8590C', baja:'#9AA7B4'};
   const LAB = {disponible:'Disponible', prestado:'Prestado', reservado:'Reservado', mantencion:'Mantención', baja:'De baja'};
   const total = (inv||[]).reduce((a,s) => a + s.n, 0);
   if (!total) return '<p class="muted">Sin equipos registrados aún.</p>';
@@ -357,7 +356,7 @@ function trendChart(tend){
       <text x="${(x+bw/2).toFixed(1)}" y="118" text-anchor="middle" font-size="7.5" fill="#6B7785">${escD(t.semana)}</text>`;
   });
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">
-    <defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2A7D63"/><stop offset="1" stop-color="#194136"/></linearGradient></defs>
+    <defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#16b8a8"/><stop offset="1" stop-color="#0E8F86"/></linearGradient></defs>
     <line x1="10" y1="100" x2="${W-10}" y2="100" stroke="#E4E8ED"/>${bars}
   </svg>`;
 }

@@ -1,23 +1,18 @@
 :root{
-  --brand:#194136; --brand-dark:#0F2A23; --recibir:#E8590C; --recibir-dark:#B8470A;
+  --brand:#0E8F86; --brand-dark:#0A6B65; --recibir:#E8590C; --recibir-dark:#B8470A;
   --ink:#152230; --muted:#6B7785; --line:#E4E8ED; --bg:#F4F6F8; --card:#FFFFFF;
   --ok:#1C7A46; --warn:#B07209; --bad:#C0392B; --chip:#EEF2F7;
   --radius:14px; --shadow:0 6px 20px rgba(20,34,52,.07);
 }
 *{box-sizing:border-box}
 body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink)}
-/* Color institucional (verde Santo Tomás #194136) con un tono por perfil */
-body[data-rol="alumno"]{--brand:#237A5F;--brand-dark:#185A45}
-body[data-rol="docente"]{--brand:#15655C;--brand-dark:#0E4A43}
-body[data-rol="panolero"]{--brand:#3E6B3A;--brand-dark:#2C4F29}
-body[data-rol="admin"]{--brand:#194136;--brand-dark:#0F2A23}
 button{font-family:inherit;cursor:pointer}
 .hidden{display:none!important}
 a{color:var(--brand)}
 
 /* ---------- Login ---------- */
 .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;
-  background:linear-gradient(135deg,#194136,#0F2A23)}
+  background:linear-gradient(135deg,#0E8F86,#0A6B65)}
 .login-card{background:var(--card);border-radius:20px;box-shadow:var(--shadow);width:100%;max-width:400px;padding:30px 26px}
 .logo{width:64px;height:64px;border-radius:18px;background:var(--brand);display:flex;align-items:center;justify-content:center;
   color:#fff;font-size:30px;font-weight:800;margin:0 auto 10px}
@@ -110,7 +105,7 @@ h2.page{margin:4px 0 14px;font-size:21px}
 .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:12.5px}
 .bar-row .nm{width:42%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bar-track{flex:1;background:#EEF2F7;border-radius:6px;height:12px;overflow:hidden}
-.bar-fill{height:100%;background:linear-gradient(90deg,var(--brand),#2A7D63);border-radius:6px;min-width:2px}
+.bar-fill{height:100%;background:linear-gradient(90deg,var(--brand),#16b8a8);border-radius:6px;min-width:2px}
 .bar-row .vl{width:26px;text-align:right;font-weight:800;color:var(--ink)}
 .legend{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:4px}
 .legend span{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)}
