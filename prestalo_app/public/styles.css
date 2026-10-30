@@ -1,0 +1,150 @@
+:root{
+  --brand:#194136; --brand-dark:#0F2A23; --recibir:#E8590C; --recibir-dark:#B8470A;
+  --ink:#152230; --muted:#6B7785; --line:#E4E8ED; --bg:#F4F6F8; --card:#FFFFFF;
+  --ok:#1C7A46; --warn:#B07209; --bad:#C0392B; --chip:#EEF2F7;
+  --radius:14px; --shadow:0 6px 20px rgba(20,34,52,.07);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+/* Color institucional (verde Santo Tomás #194136) con un tono por perfil */
+body[data-rol="alumno"]{--brand:#237A5F;--brand-dark:#185A45}
+body[data-rol="docente"]{--brand:#15655C;--brand-dark:#0E4A43}
+body[data-rol="panolero"]{--brand:#3E6B3A;--brand-dark:#2C4F29}
+body[data-rol="admin"]{--brand:#194136;--brand-dark:#0F2A23}
+button{font-family:inherit;cursor:pointer}
+.hidden{display:none!important}
+a{color:var(--brand)}
+
+/* ---------- Login ---------- */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;
+  background:linear-gradient(135deg,#194136,#0F2A23)}
+.login-card{background:var(--card);border-radius:20px;box-shadow:var(--shadow);width:100%;max-width:400px;padding:30px 26px}
+.logo{width:64px;height:64px;border-radius:18px;background:var(--brand);display:flex;align-items:center;justify-content:center;
+  color:#fff;font-size:30px;font-weight:800;margin:0 auto 10px}
+.logo-img{width:78px;height:78px;object-fit:contain;display:block;margin:0 auto 10px;background:#fff;
+  border-radius:20px;padding:10px;box-shadow:0 8px 20px rgba(20,34,52,.12)}
+.topbar-logo{width:30px;height:30px;object-fit:contain;background:#fff;border-radius:8px;padding:3px;margin-right:4px}
+.seg{display:flex;background:#E9ECEF;border-radius:10px;padding:3px;margin-bottom:12px}
+.seg button{flex:1;border:none;background:none;font-size:13px;font-weight:600;color:#55606c;padding:8px;border-radius:8px}
+.seg button.active{background:#fff;color:#142A4C;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.link-recuperar{display:block;text-align:center;font-size:12.5px;color:var(--brand);margin-top:10px;text-decoration:none}
+.link-recuperar:hover{text-decoration:underline}
+.login-card h1{text-align:center;margin:6px 0 2px;font-size:26px}
+.login-card .sub{text-align:center;color:var(--muted);margin:0 0 18px;font-size:13px}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+.field label{font-size:12px;font-weight:600;color:var(--muted)}
+.field input,.field select{padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;background:#fff}
+.btn{border:none;border-radius:10px;padding:12px 14px;font-weight:700;font-size:14px;background:var(--brand);color:#fff}
+.btn:hover{background:var(--brand-dark)}
+.btn.full{width:100%}
+.btn.ghost{background:var(--chip);color:var(--ink)}
+.btn.orange{background:var(--recibir)} .btn.orange:hover{background:var(--recibir-dark)}
+.btn.sm{padding:7px 11px;font-size:12px;border-radius:9px}
+.btn.danger{background:var(--bad)}
+.demo{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.demo p{font-size:11.5px;color:var(--muted);text-align:center;margin:0 0 8px}
+.demo-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.demo-grid button{background:var(--chip);border:1px solid var(--line);border-radius:10px;padding:9px;font-size:12.5px;font-weight:600;color:var(--ink)}
+.err{color:var(--bad);font-size:12.5px;text-align:center;min-height:16px;margin-top:6px}
+
+/* ---------- App shell ---------- */
+.topbar{background:linear-gradient(135deg,var(--brand),var(--brand-dark));color:#fff;padding:12px 18px;
+  display:flex;align-items:center;gap:12px;box-shadow:var(--shadow);position:sticky;top:0;z-index:20}
+.topbar .brand{font-weight:800;font-size:18px}
+.topbar .spacer{flex:1}
+.topbar .who{font-size:12.5px;opacity:.95;text-align:right;line-height:1.3}
+.topbar .rolepill{display:inline-block;background:rgba(255,255,255,.22);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;margin-top:2px}
+.layout{display:flex;max-width:1200px;margin:0 auto}
+.nav{width:210px;padding:16px 10px;flex-shrink:0}
+.nav button{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:none;border:none;
+  padding:11px 12px;border-radius:10px;font-size:14px;font-weight:600;color:var(--ink);margin-bottom:3px}
+.nav button .ic{width:18px;text-align:center}
+.nav button:hover{background:#fff}
+.nav button.active{background:#fff;color:var(--brand);box-shadow:var(--shadow)}
+.main{flex:1;padding:18px 18px 60px;min-width:0}
+h2.page{margin:4px 0 14px;font-size:21px}
+.muted{color:var(--muted)}
+
+/* ---------- Cards / grid ---------- */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid #ECEFF3;border-radius:var(--radius);padding:14px;box-shadow:var(--shadow)}
+.thumb{height:90px;border-radius:10px;background:linear-gradient(135deg,#DFE7EE,#C7D3DE);display:flex;align-items:center;justify-content:center;
+  font-size:30px;color:#3A4654;margin-bottom:10px}
+.card h3{margin:0 0 2px;font-size:15px}
+.card .cat{font-size:12px;color:var(--muted);margin-bottom:8px}
+.row{display:flex;align-items:center;gap:9px;background:#fff;border:1px solid #ECEFF3;border-radius:var(--radius);
+  padding:11px 12px;box-shadow:var(--shadow);margin-bottom:9px}
+.row .ava{width:40px;height:40px;border-radius:9px;background:linear-gradient(135deg,#DFE7EE,#C7D3DE);
+  display:flex;align-items:center;justify-content:center;font-size:18px;color:#3A4654;flex-shrink:0}
+.row .info{flex:1;min-width:0}
+.row .info b{font-size:14px}
+.row .info small{display:block;color:var(--muted);font-size:12px}
+
+/* ---------- Pills / badges ---------- */
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px}
+.pill.ok{background:rgba(28,122,70,.14);color:var(--ok)}
+.pill.warn{background:rgba(176,114,9,.16);color:var(--warn)}
+.pill.bad{background:rgba(192,57,43,.14);color:var(--bad)}
+.pill.info{background:var(--chip);color:var(--muted)}
+
+/* ---------- KPIs ---------- */
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+.kpi{background:var(--card);border-radius:var(--radius);padding:15px;box-shadow:var(--shadow);border:1px solid #ECEFF3}
+.kpi .n{font-size:26px;font-weight:800;color:var(--brand)}
+.kpi .l{font-size:12px;color:var(--muted);margin-top:2px}
+.kpi{position:relative;overflow:hidden}
+.kpi .ic{position:absolute;top:12px;right:13px;font-size:17px;opacity:.45}
+.kpi .ctx{font-size:11px;font-weight:700;margin-top:5px}
+.kpi.ok .n{color:var(--ok)} .kpi.bad .n{color:var(--bad)} .kpi.warn .n{color:var(--warn)} .kpi.brand .n{color:var(--brand)}
+.ctx.ok{color:var(--ok)} .ctx.bad{color:var(--bad)} .ctx.warn{color:var(--warn)} .ctx.muted{color:var(--muted)} .ctx.brand{color:var(--brand)}
+
+/* ---------- Dashboard ---------- */
+.alerts{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.alert{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;padding:9px 13px;border-radius:11px}
+.alert.bad{background:#FBE2E2;color:var(--bad)} .alert.warn{background:#FFF7E6;color:var(--warn)}
+.alert.ok{background:#E8F5EC;color:var(--ok)} .alert.info{background:var(--chip);color:var(--muted)}
+.dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.panel{background:var(--card);border:1px solid #ECEFF3;border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;min-width:0}
+.panel h3{margin:0 0 13px;font-size:14px}
+.panel h3 .sub{font-size:11px;color:var(--muted);font-weight:500}
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:12.5px}
+.bar-row .nm{width:42%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar-track{flex:1;background:#EEF2F7;border-radius:6px;height:12px;overflow:hidden}
+.bar-fill{height:100%;background:linear-gradient(90deg,var(--brand),#2A7D63);border-radius:6px;min-width:2px}
+.bar-row .vl{width:26px;text-align:right;font-weight:800;color:var(--ink)}
+.legend{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:4px}
+.legend span{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)}
+.legend b{color:var(--ink)}
+.legend i{width:11px;height:11px;border-radius:3px;display:inline-block;flex-shrink:0}
+.dev-list .row{margin-bottom:8px}
+
+/* ---------- Tables ---------- */
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)}
+th,td{text-align:left;padding:10px 12px;font-size:13px;border-bottom:1px solid var(--line)}
+th{background:#F7F9FB;color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.03em}
+tr:last-child td{border-bottom:none}
+
+/* ---------- Modal ---------- */
+.modal-bg{position:fixed;inset:0;background:rgba(10,20,30,.45);display:flex;align-items:center;justify-content:center;padding:18px;z-index:50}
+.modal{background:#fff;border-radius:18px;max-width:460px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.3);max-height:90vh;overflow:auto}
+.modal h3{margin:0 0 4px;font-size:18px}
+.modal .close{float:right;background:none;border:none;font-size:20px;color:var(--muted)}
+.toggle{display:flex;align-items:center;gap:10px;background:var(--chip);padding:11px;border-radius:10px;margin:10px 0;font-size:13px;font-weight:600}
+.aviso{padding:10px 12px;border-radius:10px;font-size:12.5px;font-weight:600;margin:8px 0}
+.aviso.warn{background:#FFF7E6;color:var(--warn)}
+.aviso.bad{background:#FBE2E2;color:var(--bad)}
+.aviso.ok{background:#E8F5EC;color:var(--ok)}
+.integrantes-row{display:flex;gap:6px;margin-bottom:6px}
+.integrantes-row input{flex:1;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:12.5px}
+
+/* toast */
+#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#152230;color:#fff;
+  padding:11px 18px;border-radius:12px;font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:100;opacity:0;transition:opacity .2s}
+#toast.show{opacity:1}
+
+@media(max-width:720px){
+  .layout{flex-direction:column}
+  .nav{width:100%;display:flex;gap:6px;overflow-x:auto;padding:10px}
+  .nav button{width:auto;white-space:nowrap}
+  .dash-grid{grid-template-columns:1fr}
+}

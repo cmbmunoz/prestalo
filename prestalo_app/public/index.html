@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Préstalo</title>
+<link rel="stylesheet" href="styles.css">
+<!-- PWA -->
+<meta name="theme-color" content="#0E8F86">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Préstalo">
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login" class="login-wrap">
+  <div class="login-card">
+    <img class="logo-img" src="santotomas.png" alt="Universidad Santo Tomás">
+    <h1>Préstalo</h1>
+    <p class="sub">Universidad Santo Tomás</p>
+
+    <div class="seg" id="seg">
+      <button class="active" data-modo="rut">RUT</button>
+      <button data-modo="correo">Correo</button>
+    </div>
+
+    <div class="field">
+      <label id="idLabel">RUT</label>
+      <input id="ident" placeholder="11.111.111-1" autocomplete="username">
+    </div>
+    <div class="field">
+      <label>Clave</label>
+      <input id="password" type="password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn full" id="btnLogin">Iniciar sesión</button>
+    <a href="#" id="linkRecuperar" class="link-recuperar">¿Olvidaste tu contraseña?</a>
+    <div class="err" id="loginErr"></div>
+
+    <div class="demo">
+      <p>Accesos de demostración (clave: <b>prestalo</b>)</p>
+      <div class="demo-grid">
+        <button data-rut="11.111.111-1">🎓 Alumno</button>
+        <button data-rut="22.222.222-2">🧑‍🏫 Docente</button>
+        <button data-rut="33.333.333-3">📦 Pañolero</button>
+        <button data-rut="44.444.444-4">🛠️ Administrador</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" class="hidden">
+  <div class="topbar">
+    <img class="topbar-logo" src="santotomas.png" alt="UST">
+    <span class="brand">Préstalo</span>
+    <span class="spacer"></span>
+    <div class="who">
+      <div id="whoName">—</div>
+      <span class="rolepill" id="whoRole">—</span>
+    </div>
+    <button class="btn sm ghost" id="btnLogout" style="margin-left:10px">Salir</button>
+  </div>
+  <div class="layout">
+    <nav class="nav" id="nav"></nav>
+    <main class="main" id="view"></main>
+  </div>
+</div>
+
+<div id="modalRoot"></div>
+<div id="toast"></div>
+
+<script src="app.js"></script>
+<script src="asistente.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+    });
+  }
+</script>
+</body>
+</html>

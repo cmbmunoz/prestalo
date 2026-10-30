@@ -1,0 +1,19 @@
+[build]
+  functions = "netlify/functions"
+  publish = "public"
+
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = ["exceljs"]
+
+# La API Express corre como función serverless
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+
+# Resto de rutas → sitio estático (SPA)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
