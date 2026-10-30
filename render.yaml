@@ -1,0 +1,18 @@
+# Blueprint de Render para Préstalo (web + API en un solo servicio Node/Express).
+# Render lee este archivo y crea el servicio automáticamente.
+services:
+  - type: web
+    name: prestalo
+    env: node
+    plan: free
+    region: oregon
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_URL
+        sync: false          # se pega a mano en el panel (la URL del pooler de Supabase)
+      - key: PRESTALO_SECRET
+        generateValue: true  # Render genera un secreto largo automáticamente
+      - key: NODE_VERSION
+        value: "20"
