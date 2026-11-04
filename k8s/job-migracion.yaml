@@ -1,0 +1,33 @@
+# Job de migración: aplica los scripts SQL de supabase/ antes de exponer la
+# nueva versión. Ejecutar una vez por despliegue (idempotente).
+#   kubectl -n prestalo apply -f k8s/job-migracion.yaml
+#   kubectl -n prestalo wait --for=condition=complete job/prestalo-migracion --timeout=120s
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: prestalo-migracion
+  labels: { app: prestalo, component: migracion }
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels: { app: prestalo, component: migracion }
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: migracion
+          image: REGISTRO-UST/prestalo:1.0.0
+          command: ["node", "jobs/migrate.js"]
+          env:
+            - name: INCLUDE_SEEDS        # true solo la primera vez, para cargar datos de ejemplo
+              value: "false"
+          envFrom:
+            - configMapRef: { name: prestalo-config }
+            - secretRef: { name: prestalo-secrets }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }

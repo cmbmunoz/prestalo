@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Restablecer contraseña — Préstalo</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-card">
+    <img class="logo-img" src="santotomas.png" alt="Universidad Santo Tomás">
+    <h1>Préstalo</h1>
+    <p class="sub">Restablecer contraseña</p>
+
+    <div id="form">
+      <div class="field">
+        <label>Nueva contraseña</label>
+        <input id="p1" type="password" placeholder="Mínimo 6 caracteres">
+      </div>
+      <div class="field">
+        <label>Repetir contraseña</label>
+        <input id="p2" type="password" placeholder="••••••••">
+      </div>
+      <button class="btn full" id="btn">Guardar contraseña</button>
+      <div class="err" id="err"></div>
+    </div>
+
+    <div id="ok" class="aviso ok" style="display:none;margin-top:10px"></div>
+    <a href="/" class="link-recuperar" style="margin-top:14px">Volver al inicio</a>
+  </div>
+</div>
+
+<script>
+const q = new URLSearchParams(location.search);
+const token = q.get('token');
+const $ = s => document.querySelector(s);
+if (!token) { $('#err').textContent = 'Falta el token del enlace.'; $('#btn').disabled = true; }
+
+$('#btn').onclick = async () => {
+  $('#err').textContent = '';
+  const p1 = $('#p1').value, p2 = $('#p2').value;
+  if (p1.length < 6) { $('#err').textContent = 'La clave debe tener al menos 6 caracteres'; return; }
+  if (p1 !== p2) { $('#err').textContent = 'Las contraseñas no coinciden'; return; }
+  try {
+    const res = await fetch('/api/reset', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password: p1 })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error');
+    $('#form').style.display = 'none';
+    $('#ok').style.display = 'block';
+    $('#ok').textContent = data.mensaje || 'Contraseña actualizada.';
+  } catch (e) { $('#err').textContent = e.message; }
+};
+</script>
+</body>
+</html>
