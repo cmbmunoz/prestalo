@@ -1,0 +1,14 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+.netlify
+netlify
+build
+.DS_Store
+*.log
+*.zip
+Prestalo_App_Render.zip

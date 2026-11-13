@@ -1,0 +1,33 @@
+# CronJob: expira reservas vencidas por no-show (RF-56) cada 5 minutos.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: prestalo-noshow
+  labels: { app: prestalo, component: cron }
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels: { app: prestalo, component: cron }
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: noshow
+              image: REGISTRO-UST/prestalo:1.0.0
+              command: ["node", "jobs/expirar-noshow.js"]
+              envFrom:
+                - configMapRef: { name: prestalo-config }
+                - secretRef: { name: prestalo-secrets }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }

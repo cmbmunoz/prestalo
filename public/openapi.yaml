@@ -1,0 +1,223 @@
+openapi: 3.0.3
+info:
+  title: Préstalo API
+  description: >
+    API del sistema de gestión de préstamo e inventario de equipos (Préstalo) —
+    Instituto Profesional Santo Tomás, Área de Comunicación Audiovisual.
+    Documentación de servicios conforme a DATI-N3001 (7.5). Esta especificación
+    cubre los endpoints representativos; se completa por servicio en la ficha técnica.
+  version: "1.0.0"
+  contact:
+    name: Préstalo — Área de Comunicación Audiovisual UST
+servers:
+  - url: /
+    description: Mismo origen (detrás del Ingress/Reverse proxy con TLS)
+tags:
+  - name: Operación
+  - name: Autenticación
+  - name: Catálogo y reservas
+  - name: Asignaturas
+  - name: Solicitudes
+  - name: Administración
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: token
+  responses:
+    NoAutenticado:
+      description: No autenticado
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        detalle: { type: string }
+    LoginRequest:
+      type: object
+      properties:
+        rut: { type: string, example: "11.111.111-1" }
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+    LoginResponse:
+      type: object
+      properties:
+        token: { type: string }
+    Equipo:
+      type: object
+      properties:
+        id: { type: integer }
+        nombre: { type: string }
+        categoria: { type: string }
+        estado: { type: string, enum: [disponible, reservado, prestado, mantencion, baja] }
+        codigo_qr: { type: string }
+    TestConectividad:
+      type: object
+      properties:
+        status: { type: string, enum: [ok, error] }
+        checks:
+          type: object
+          properties:
+            base_datos: { type: string }
+            sftp: { type: string }
+            intranet_api: { type: string }
+        entorno:
+          type: object
+          properties:
+            node: { type: string }
+            entorno: { type: string }
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      tags: [Operación]
+      security: []
+      summary: Liveness/Readiness para el orquestador
+      responses:
+        '200': { description: Servicio y base de datos operativos }
+        '503': { description: Degradado (base de datos no disponible) }
+  /api/test-conectividad:
+    get:
+      tags: [Operación]
+      security: []
+      summary: Test de conectividad a los recursos (DATI-N3001 7.7)
+      description: Retorna 200 si la conectividad es exitosa, 500 si falla. Informa entorno sin exponer credenciales.
+      responses:
+        '200':
+          description: Conectividad exitosa
+          content: { application/json: { schema: { $ref: '#/components/schemas/TestConectividad' } } }
+        '500':
+          description: Falla de conectividad
+          content: { application/json: { schema: { $ref: '#/components/schemas/TestConectividad' } } }
+  /api/login:
+    post:
+      tags: [Autenticación]
+      security: []
+      summary: Iniciar sesión por RUT o correo
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/LoginRequest' } } }
+      responses:
+        '200':
+          description: Token de sesión
+          content: { application/json: { schema: { $ref: '#/components/schemas/LoginResponse' } } }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+  /api/me:
+    get:
+      tags: [Autenticación]
+      summary: Perfil del usuario autenticado y sus asignaturas
+      responses:
+        '200': { description: Usuario y asignaturas }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+  /api/equipos:
+    get:
+      tags: [Catálogo y reservas]
+      summary: Equipos del catálogo (habilitados para el usuario según rol)
+      responses:
+        '200':
+          description: Lista de equipos
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Equipo' } } } }
+  /api/equipos/{id}/ocupacion:
+    get:
+      tags: [Catálogo y reservas]
+      summary: Periodos ocupados de un equipo (disponibilidad)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: desde, in: query, schema: { type: string, format: date } }
+        - { name: hasta, in: query, schema: { type: string, format: date } }
+      responses:
+        '200': { description: Reservas que ocupan el equipo + horario }
+  /api/reservas:
+    post:
+      tags: [Catálogo y reservas]
+      summary: Crear una reserva (valida uso académico, elegibilidad, anticipación, sanciones y bloqueos)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                equipo_id: { type: integer }
+                fecha_inicio: { type: string, format: date-time }
+                fecha_fin: { type: string, format: date-time }
+                uso_academico: { type: boolean }
+                integrantes: { type: array, items: { type: object } }
+      responses:
+        '201': { description: Reserva creada }
+        '409': { description: Conflicto (no disponible, sanción vigente, horario bloqueado) }
+  /api/mis-asignaturas:
+    get:
+      tags: [Asignaturas]
+      summary: Asignaturas del usuario con sus categorías de equipo habilitadas
+      responses:
+        '200': { description: Lista de asignaturas }
+  /api/asignaturas/{id}/equipos:
+    get:
+      tags: [Asignaturas]
+      summary: Equipos disponibles para una asignatura (por elegibilidad)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Equipos habilitados }
+        '403': { description: No inscrito en la asignatura }
+  /api/asignaturas/{id}/tareas:
+    get:
+      tags: [Asignaturas]
+      summary: Tareas de una asignatura (verifica inscripción)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Tareas de la asignatura }
+        '403': { description: No inscrito en la asignatura }
+  /api/solicitudes:
+    post:
+      tags: [Solicitudes]
+      summary: Crear una solicitud especial (asignatura, descripción, fechas, duración, equipos)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                asignatura_id: { type: integer }
+                descripcion: { type: string }
+                fecha_inicio: { type: string, format: date-time }
+                fecha_fin: { type: string, format: date-time }
+                duracion: { type: string }
+                equipos: { type: array, items: { type: integer } }
+      responses:
+        '201': { description: Solicitud creada }
+        '400': { description: Falta la descripción }
+  /api/solicitudes/mias:
+    get:
+      tags: [Solicitudes]
+      summary: Mis solicitudes especiales
+      responses:
+        '200': { description: Lista de solicitudes del usuario }
+  /api/anuncios:
+    get:
+      tags: [Operación]
+      summary: Anuncios vigentes de la sede del usuario
+      responses:
+        '200': { description: Lista de anuncios }
+  /api/admin/dashboard:
+    get:
+      tags: [Administración]
+      summary: Panel de una sede (o de la sede indicada con ?sede=)
+      parameters:
+        - { name: sede, in: query, schema: { type: integer } }
+      responses:
+        '200': { description: KPIs, top de equipos, inventario, tendencia }
+        '403': { description: Requiere rol administrador }
+  /api/admin/dashboard/global:
+    get:
+      tags: [Administración]
+      summary: Panel consolidado de todas las sedes + desglose por sede
+      responses:
+        '200': { description: Agregado global y por sede }
+        '403': { description: Requiere rol administrador }

@@ -1,0 +1,35 @@
+# Pipeline alternativo para GitLab CI (si la UST opera GitLab).
+# Construye la imagen con Kaniko (sin demonio Docker), la escanea y la publica
+# en el registro del proyecto. Variables usadas: las predefinidas de GitLab
+# (CI_REGISTRY*, CI_COMMIT_*). El despliegue queda como etapa manual.
+
+stages: [build, scan, deploy]
+
+build:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  script:
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(printf '%s:%s' "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+    - /kaniko/executor
+        --context "$CI_PROJECT_DIR"
+        --dockerfile "$CI_PROJECT_DIR/Dockerfile"
+        --destination "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+        --destination "$CI_REGISTRY_IMAGE:latest"
+
+scan:
+  stage: scan
+  image: aquasec/trivy:0.56.2
+  script:
+    - trivy image --severity CRITICAL,HIGH --exit-code 0 "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+  allow_failure: true
+
+deploy:
+  stage: deploy
+  image: bitnami/kubectl:1.31
+  when: manual
+  script:
+    - kubectl -n prestalo apply -f k8s/job-migracion.yaml
+    - kubectl -n prestalo set image deployment/prestalo-web prestalo="$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"

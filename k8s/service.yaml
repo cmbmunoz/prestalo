@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: prestalo-web
+  labels: { app: prestalo, component: web }
+spec:
+  selector: { app: prestalo, component: web }
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+  type: ClusterIP
