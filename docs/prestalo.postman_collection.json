@@ -1,0 +1,52 @@
+{
+  "info": {
+    "name": "Préstalo API",
+    "description": "Colección de requests del sistema Préstalo (UST). No contiene credenciales: usa las variables {{base_url}} y {{token}}. Conforme a DATI-N3001 9.6.2.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "https://prestalo.ust.cl" },
+    { "key": "token", "value": "" },
+    { "key": "sede_id", "value": "" }
+  ],
+  "auth": { "type": "bearer", "bearer": [ { "key": "token", "value": "{{token}}", "type": "string" } ] },
+  "item": [
+    { "name": "Operación", "item": [
+      { "name": "Health", "request": { "method": "GET", "url": "{{base_url}}/health", "auth": { "type": "noauth" } } },
+      { "name": "Test de conectividad", "request": { "method": "GET", "url": "{{base_url}}/api/test-conectividad", "auth": { "type": "noauth" } } }
+    ]},
+    { "name": "Autenticación", "item": [
+      { "name": "Login", "request": { "method": "POST", "auth": { "type": "noauth" },
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": { "mode": "raw", "raw": "{\n  \"rut\": \"\",\n  \"password\": \"\"\n}" },
+        "url": "{{base_url}}/api/login" } },
+      { "name": "Mi perfil (me)", "request": { "method": "GET", "url": "{{base_url}}/api/me" } }
+    ]},
+    { "name": "Catálogo y reservas", "item": [
+      { "name": "Equipos", "request": { "method": "GET", "url": "{{base_url}}/api/equipos" } },
+      { "name": "Ocupación de equipo", "request": { "method": "GET", "url": "{{base_url}}/api/equipos/1/ocupacion?desde=2026-11-01&hasta=2026-11-30" } },
+      { "name": "Crear reserva", "request": { "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": { "mode": "raw", "raw": "{\n  \"equipo_id\": 1,\n  \"fecha_inicio\": \"2026-11-10T09:00:00Z\",\n  \"fecha_fin\": \"2026-11-10T13:00:00Z\",\n  \"uso_academico\": true,\n  \"integrantes\": []\n}" },
+        "url": "{{base_url}}/api/reservas" } }
+    ]},
+    { "name": "Asignaturas", "item": [
+      { "name": "Mis asignaturas", "request": { "method": "GET", "url": "{{base_url}}/api/mis-asignaturas" } },
+      { "name": "Equipos de la asignatura", "request": { "method": "GET", "url": "{{base_url}}/api/asignaturas/1/equipos" } },
+      { "name": "Tareas de la asignatura", "request": { "method": "GET", "url": "{{base_url}}/api/asignaturas/1/tareas" } },
+      { "name": "Compañeros de la asignatura", "request": { "method": "GET", "url": "{{base_url}}/api/asignaturas/1/companeros" } }
+    ]},
+    { "name": "Solicitudes", "item": [
+      { "name": "Crear solicitud especial", "request": { "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": { "mode": "raw", "raw": "{\n  \"asignatura_id\": 1,\n  \"descripcion\": \"\",\n  \"fecha_inicio\": \"2026-11-10T09:00:00Z\",\n  \"fecha_fin\": \"2026-11-10T13:00:00Z\",\n  \"duracion\": \"4 h\",\n  \"equipos\": [1]\n}" },
+        "url": "{{base_url}}/api/solicitudes" } },
+      { "name": "Mis solicitudes", "request": { "method": "GET", "url": "{{base_url}}/api/solicitudes/mias" } }
+    ]},
+    { "name": "Administración", "item": [
+      { "name": "Panel de sede", "request": { "method": "GET", "header": [ { "key": "X-Sede-Id", "value": "{{sede_id}}" } ], "url": "{{base_url}}/api/admin/dashboard" } },
+      { "name": "Panel global multisede", "request": { "method": "GET", "url": "{{base_url}}/api/admin/dashboard/global" } },
+      { "name": "Anuncios", "request": { "method": "GET", "url": "{{base_url}}/api/anuncios" } }
+    ]}
+  ]
+}

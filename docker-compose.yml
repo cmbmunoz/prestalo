@@ -1,0 +1,45 @@
+# =====================================================================
+#  Préstalo — Orquestación para DESARROLLO / PRUEBAS
+#  Levanta la app + una base PostgreSQL local idéntica a producción.
+#  Uso:
+#    1) copiar .env.example a .env y completar DB_PASSWORD y PRESTALO_SECRET
+#    2) docker compose up --build
+#    3) abrir http://localhost:3000
+#  Los scripts de supabase/ se aplican automáticamente al crear la base.
+# =====================================================================
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: prestalo_db
+      POSTGRES_USER: prestalo
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ./supabase:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prestalo -d prestalo_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://prestalo:${DB_PASSWORD}@db:5432/prestalo_db
+      DB_SSL: "false"            # base interna sin SSL
+      PRESTALO_SECRET: ${PRESTALO_SECRET}
+      PORT: "3000"
+      NODE_ENV: production
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+
+volumes:
+  dbdata:

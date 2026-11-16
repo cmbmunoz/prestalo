@@ -1,0 +1,25 @@
+# Ingress con TLS. En OpenShift puede usarse un Route en su lugar (ver nota abajo).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: prestalo-web
+  labels: { app: prestalo }
+  annotations:
+    # Ajustar a la clase/annotations del ingress de la UST (nginx, traefik, etc.)
+    kubernetes.io/ingress.class: "nginx"
+spec:
+  tls:
+    - hosts: ["prestalo.ust.cl"]
+      secretName: prestalo-tls      # certificado gestionado por el clúster / cert-manager
+  rules:
+    - host: prestalo.ust.cl
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prestalo-web
+                port: { number: 80 }
+# --- OpenShift (alternativa a Ingress) ---
+# oc create route edge prestalo --service=prestalo-web --hostname=prestalo.ust.cl --port=http

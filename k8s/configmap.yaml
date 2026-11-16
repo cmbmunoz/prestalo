@@ -1,0 +1,12 @@
+# Configuración NO sensible de Préstalo.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prestalo-config
+  labels: { app: prestalo }
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+  DB_SSL: "false"            # base PostgreSQL interna del clúster (sin SSL)
+  PG_POOL_MAX: "5"
+  PUBLIC_URL: "https://prestalo.ust.cl"

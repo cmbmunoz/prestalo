@@ -1,0 +1,49 @@
+# Deployment de la app web Préstalo (API + PWA).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prestalo-web
+  labels: { app: prestalo, component: web }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: prestalo, component: web }
+  template:
+    metadata:
+      labels: { app: prestalo, component: web }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: prestalo
+          image: REGISTRO-UST/prestalo:1.0.0      # reemplazar por el registro y tag reales
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef: { name: prestalo-config }
+            - secretRef: { name: prestalo-secrets }
+          env:
+            - name: DISABLE_CRON          # el no-show lo corre el CronJob, no las réplicas web
+              value: "true"
+          readinessProbe:
+            httpGet: { path: /health, port: 3000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: 3000 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "256Mi" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
