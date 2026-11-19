@@ -64,6 +64,7 @@ CREATE TABLE entidad (
     marca_color   VARCHAR(9)   NOT NULL DEFAULT '#0E7C86',   -- color de marca (hex)
     bodega_label  VARCHAR(60)  NOT NULL DEFAULT 'Pañol',     -- "Pañol" / "Bodega" / "Almacén"
     logo_url      TEXT,
+    horas_anticipacion INTEGER NOT NULL DEFAULT 48,          -- plazo mínimo de reserva por sede (h)
     activo        BOOLEAN      NOT NULL DEFAULT TRUE,
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),

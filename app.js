@@ -18,8 +18,8 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const ANTICIPACION_RECINTO_H = 72;   // RF-53
-const ANTICIPACION_MIN_H = 4;        // RF-15 (general)
+const ANTICIPACION_RECINTO_H = 72;   // RF-53 (recintos, con autorización)
+const ANTICIPACION_MIN_H = 48;       // Regla común a las sedes (48 h). Parametrizable por sede (entidad.horas_anticipacion).
 const DEMO_PASSWORD = 'prestalo';
 
 // ----------------------- Middleware de sesión -----------------------
@@ -133,9 +133,15 @@ app.get('/api/me', auth, wrap(async (req, res) => {
      JOIN asignatura a ON a.id=ua.asignatura_id WHERE ua.usuario_rut=$1`, [req.user.rut]);
   // Sedes en las que el usuario puede operar (para el selector multi-sede)
   const ids = await sedesScope(req);
-  const sedes = ids.length
-    ? (await db.query(`SELECT id, nombre FROM entidad WHERE id = ANY($1) ORDER BY nombre`, [ids])).rows
-    : [];
+  let sedes = [];
+  if (ids.length) {
+    try {
+      sedes = (await db.query(`SELECT id, nombre, horas_anticipacion FROM entidad WHERE id = ANY($1) ORDER BY nombre`, [ids])).rows;
+    } catch (e) {
+      if (e.code !== '42703') throw e; // columna horas_anticipacion aún sin migrar
+      sedes = (await db.query(`SELECT id, nombre FROM entidad WHERE id = ANY($1) ORDER BY nombre`, [ids])).rows;
+    }
+  }
   res.json({
     user: req.user,
     asignaturas: asigs.rows,
@@ -294,14 +300,23 @@ app.post('/api/reservas', auth, requireRole('alumno', 'docente'), wrap(async (re
   if (sanc.rows.length)
     return res.status(403).json({ error: `Bloqueado por sanción vigente: ${sanc.rows[0].motivo} (hasta ${sanc.rows[0].fecha_fin})` });
 
-  // RF-51/53: recinto o equipo que requiere autorización → 72 h + flujo Jefatura/DAO
+  // Plazo de reserva: 48 h de anticipación como regla común, parametrizable por sede
+  // (entidad.horas_anticipacion). Las solicitudes excepcionales van por el flujo especial.
+  let minHoras = ANTICIPACION_MIN_H;
+  try {
+    const cfg = (await db.query(`SELECT horas_anticipacion FROM entidad WHERE id=$1`, [eq.entidad_id])).rows[0];
+    if (cfg && Number.isFinite(Number(cfg.horas_anticipacion))) minHoras = Number(cfg.horas_anticipacion);
+  } catch (e) { if (e.code !== '42703') throw e; } // 42703 = columna aún sin migrar → usa el valor común
+
+  // RF-51/53: recinto o equipo que requiere autorización → autorización Jefatura/DAO
   const esRecinto = eq.tipo === 'recinto' || eq.requiere_autorizacion;
   const horas = (ini - now) / 3600000;
   if (esRecinto) {
-    if (horas < ANTICIPACION_RECINTO_H)
-      return res.status(400).json({ error: `Los recintos requieren al menos ${ANTICIPACION_RECINTO_H} h de anticipación (RF-53)` });
-  } else if (horas < ANTICIPACION_MIN_H) {
-    return res.status(400).json({ error: `Reserva con al menos ${ANTICIPACION_MIN_H} h de anticipación` });
+    const reqH = Math.max(ANTICIPACION_RECINTO_H, minHoras);
+    if (horas < reqH)
+      return res.status(400).json({ error: `Los recintos requieren al menos ${reqH} h de anticipación (RF-53)` });
+  } else if (horas < minHoras) {
+    return res.status(400).json({ error: `El plazo de reserva es de al menos ${minHoras} h de anticipación. Para casos excepcionales, gestiona una solicitud especial.` });
   }
 
   // Bloqueo de horarios: periodo no disponible para este equipo (o global)
@@ -1548,32 +1563,50 @@ app.get('/api/sedes', auth, wrap(async (req, res) => {
   // Cada usuario recibe las sedes en las que puede operar (admin: todas; docente: las de
   // sus asignaturas; alumno/pañolero: la suya). Habilita el selector multi-sede.
   const ids = await sedesScope(req);
-  const sedes = ids.length
-    ? (await db.query(`SELECT id, nombre, bodega_label, activo FROM entidad WHERE id = ANY($1) ORDER BY nombre`, [ids])).rows
-    : [];
+  const cols = 'id, nombre, bodega_label, activo';
+  let sedes = [];
+  if (ids.length) {
+    try {
+      sedes = (await db.query(`SELECT ${cols}, horas_anticipacion FROM entidad WHERE id = ANY($1) ORDER BY nombre`, [ids])).rows;
+    } catch (e) {
+      if (e.code !== '42703') throw e; // columna aún sin migrar
+      sedes = (await db.query(`SELECT ${cols} FROM entidad WHERE id = ANY($1) ORDER BY nombre`, [ids])).rows;
+    }
+  }
   const actual = sedes.find(s => s.id === req.sede) || sedes[0] || null;
   res.json({ actual, sede_activa: req.sede, sedes, puede_todos: sedes.length > 1 });
 }));
 app.post('/api/admin/sedes', auth, requireRole('admin'), wrap(async (req, res) => {
-  const { nombre, bodega_label } = req.body || {};
+  const { nombre, bodega_label, horas_anticipacion } = req.body || {};
   if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre de la sede es obligatorio' });
+  const ha = Number.isFinite(Number(horas_anticipacion)) ? Math.max(0, Math.round(Number(horas_anticipacion))) : 48;
   try {
     const r = (await db.query(
-      `INSERT INTO entidad (nombre, bodega_label) VALUES ($1,$2) RETURNING id`,
-      [nombre.trim(), (bodega_label && bodega_label.trim()) || 'Pañol'])).rows[0];
+      `INSERT INTO entidad (nombre, bodega_label, horas_anticipacion) VALUES ($1,$2,$3) RETURNING id`,
+      [nombre.trim(), (bodega_label && bodega_label.trim()) || 'Pañol', ha])).rows[0];
     res.status(201).json({ id: r.id });
-  } catch (e) { if (e.code === '23505') return res.status(409).json({ error: 'Ya existe una sede con ese nombre' }); throw e; }
+  } catch (e) {
+    if (e.code === '23505') return res.status(409).json({ error: 'Ya existe una sede con ese nombre' });
+    if (e.code === '42703') return res.status(409).json({ error: 'Falta correr la migración 13 (columna horas_anticipacion).' });
+    throw e;
+  }
 }));
 app.put('/api/admin/sedes/:id', auth, requireRole('admin'), wrap(async (req, res) => {
-  const { nombre, bodega_label, activo } = req.body || {};
+  const { nombre, bodega_label, activo, horas_anticipacion } = req.body || {};
   if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre de la sede es obligatorio' });
+  const ha = Number.isFinite(Number(horas_anticipacion)) ? Math.max(0, Math.round(Number(horas_anticipacion))) : null;
   try {
     const r = await db.query(
-      `UPDATE entidad SET nombre=$2, bodega_label=$3, activo=COALESCE($4,activo), updated_at=now() WHERE id=$1`,
-      [req.params.id, nombre.trim(), (bodega_label && bodega_label.trim()) || 'Pañol', typeof activo === 'boolean' ? activo : null]);
+      `UPDATE entidad SET nombre=$2, bodega_label=$3, activo=COALESCE($4,activo),
+         horas_anticipacion=COALESCE($5,horas_anticipacion), updated_at=now() WHERE id=$1`,
+      [req.params.id, nombre.trim(), (bodega_label && bodega_label.trim()) || 'Pañol', typeof activo === 'boolean' ? activo : null, ha]);
     if (!r.rowCount) return res.status(404).json({ error: 'Sede no encontrada' });
     res.json({ ok: true });
-  } catch (e) { if (e.code === '23505') return res.status(409).json({ error: 'Ya existe una sede con ese nombre' }); throw e; }
+  } catch (e) {
+    if (e.code === '23505') return res.status(409).json({ error: 'Ya existe una sede con ese nombre' });
+    if (e.code === '42703') return res.status(409).json({ error: 'Falta correr la migración 13 (columna horas_anticipacion).' });
+    throw e;
+  }
 }));
 
 // ----------------------- Anuncios / tablón de avisos (por sede) -----------------------

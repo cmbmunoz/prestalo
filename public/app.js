@@ -324,7 +324,8 @@ async function modalReserva(id) {
   } catch (_) { /* resumen opcional */ }
   const asigs = ME.asignaturas;
   const now = new Date();
-  const defIni = new Date(now.getTime() + (esRecinto ? 73 : 5) * 3600000);
+  const minH = (ME.sedes && (ME.sedes.find(s => s.id === SEDE) || {}).horas_anticipacion) || 48;
+  const defIni = new Date(now.getTime() + (esRecinto ? Math.max(73, minH + 1) : (minH + 1)) * 3600000);
   const toLocal = d => new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,16);
   openModal(`
     <h3>Reservar: ${e.nombre}</h3>
@@ -1621,19 +1622,20 @@ async function viewSedes() {
     const s = await api('/sedes');
     const sedes = s.sedes || [];
     $('#seList').innerHTML = sedes.map(x => `<div class="row"><div class="ava">🏫</div>
-      <div class="info"><b>${escD(x.nombre)}</b><small>Pañol: ${escD(x.bodega_label || 'Pañol')}${x.activo === false ? ' · inactiva' : ''}${x.id === SEDE ? ' · <b>activa</b>' : ''}</small></div>
-      <button class="btn sm ghost" data-ed="${x.id}" data-n="${escD(x.nombre)}" data-b="${escD(x.bodega_label || '')}" data-a="${x.activo !== false}">Editar</button></div>`).join('');
-    $('#seList').querySelectorAll('[data-ed]').forEach(b => b.onclick = () => form(b.dataset.ed, b.dataset.n, b.dataset.b, b.dataset.a === 'true'));
+      <div class="info"><b>${escD(x.nombre)}</b><small>Pañol: ${escD(x.bodega_label || 'Pañol')} · Reserva: ${x.horas_anticipacion != null ? x.horas_anticipacion : 48} h${x.activo === false ? ' · inactiva' : ''}${x.id === SEDE ? ' · <b>activa</b>' : ''}</small></div>
+      <button class="btn sm ghost" data-ed="${x.id}" data-n="${escD(x.nombre)}" data-b="${escD(x.bodega_label || '')}" data-a="${x.activo !== false}" data-h="${x.horas_anticipacion != null ? x.horas_anticipacion : 48}">Editar</button></div>`).join('');
+    $('#seList').querySelectorAll('[data-ed]').forEach(b => b.onclick = () => form(b.dataset.ed, b.dataset.n, b.dataset.b, b.dataset.a === 'true', b.dataset.h));
   };
-  function form(id, nombre, bodega, activo) {
+  function form(id, nombre, bodega, activo, horas) {
     openModal(`<h3>${id ? 'Editar' : 'Nueva'} sede</h3>
       <div class="field"><label>Nombre</label><input id="seN" value="${id ? escD(nombre) : ''}" placeholder="UST Santiago Centro"></div>
       <div class="field"><label>Cómo se llama el pañol/bodega</label><input id="seB" value="${id ? escD(bodega) : 'Pañol'}" placeholder="Pañol"></div>
+      <div class="field"><label>Plazo de reserva (horas de anticipación)</label><input id="seH" type="number" min="0" value="${id ? (horas || 48) : 48}" placeholder="48"><small class="muted">Regla común: 48 h. Ajusta solo si esta sede necesita otro plazo.</small></div>
       ${id ? `<div class="toggle"><input type="checkbox" id="seA" ${activo ? 'checked' : ''}><label for="seA" style="margin:0">Sede activa</label></div>` : ''}
       <div class="err" id="seErr"></div><button class="btn full" id="seOk">Guardar</button>`);
     $('#seOk').onclick = async () => {
       $('#seErr').textContent = '';
-      const body = { nombre: $('#seN').value.trim(), bodega_label: $('#seB').value.trim() };
+      const body = { nombre: $('#seN').value.trim(), bodega_label: $('#seB').value.trim(), horas_anticipacion: Number($('#seH').value) };
       if (id) body.activo = $('#seA').checked;
       try {
         await api('/admin/sedes' + (id ? '/' + id : ''), { method: id ? 'PUT' : 'POST', body });
