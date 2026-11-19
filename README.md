@@ -1,11 +1,11 @@
-# Préstalo — Aplicación web (Node + Express + PostgreSQL)
+# Pañol 2.0 — Aplicación web (Node + Express + PostgreSQL)
 
 App de gestión de préstamo e inventario de equipos, conectada a la base de
 datos del modelo entidad-relación v2. Login por perfil con validaciones y
 restricciones de la normativa UST-IPST 2018 aplicadas en el servidor.
 
 > El modelo **white-label (multi-entidad) está oculto** en la interfaz: la app
-> opera sobre una entidad fija (Préstalo). La tabla `entidad` existe en la base
+> opera sobre una entidad fija (Pañol 2.0). La tabla `entidad` existe en la base
 > pero no se expone ni se puede conmutar desde la UI.
 
 ## Requisitos

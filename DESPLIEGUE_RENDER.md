@@ -1,4 +1,4 @@
-# Publicar Préstalo en Render (web + API) — URL pública fija y gratis
+# Publicar Pañol 2.0 en Render (web + API) — URL pública fija y gratis
 
 Render corre tu backend Express **tal cual**: un solo servicio sirve la web y la API,
 y la rutina de no-show (RF-56) funciona sola porque el servicio queda vivo (no es serverless).
@@ -75,13 +75,13 @@ SMTP_HOST = smtp.gmail.com
 SMTP_PORT = 465
 SMTP_USER = tucorreo@gmail.com
 SMTP_PASS = (contraseña de aplicación de 16 letras de Google)
-MAIL_FROM = Préstalo <tucorreo@gmail.com>
+MAIL_FROM = Pañol 2.0 <tucorreo@gmail.com>
 PUBLIC_URL = https://prestalo.onrender.com
 ```
 Sin esto, la recuperación valida los datos pero no envía el correo (modo simulación en los logs).
 
 ### (Opcional) Asistente de IA en la app
-Para activar el botón flotante de chat (consultas sobre Préstalo y la normativa del pañol),
+Para activar el botón flotante de chat (consultas sobre Pañol 2.0 y la normativa del pañol),
 agrega en **Environment** la clave de Anthropic:
 ```
 ANTHROPIC_API_KEY = sk-ant-...   (tu API key de console.anthropic.com)
@@ -93,7 +93,7 @@ Sin `ANTHROPIC_API_KEY`, el botón aparece pero el asistente responde que falta 
 
 ## PARTE 4 — Verificar
 
-1. Abre `https://TU-SERVICIO.onrender.com` → debe cargar el login de Préstalo.
+1. Abre `https://TU-SERVICIO.onrender.com` → debe cargar el login de Pañol 2.0.
 2. Prueba la API directo: `https://TU-SERVICIO.onrender.com/api/categorias` → debe devolver JSON (no un error).
 3. Entra con un usuario demo, por ejemplo **44.444.444-4 / prestalo** (admin) y revisa el panel.
 

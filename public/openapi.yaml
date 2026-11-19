@@ -1,14 +1,14 @@
 openapi: 3.0.3
 info:
-  title: Préstalo API
+  title: Pañol 2.0 API
   description: >
-    API del sistema de gestión de préstamo e inventario de equipos (Préstalo) —
+    API del sistema de gestión de préstamo e inventario de equipos (Pañol 2.0) —
     Instituto Profesional Santo Tomás, Área de Comunicación Audiovisual.
     Documentación de servicios conforme a DATI-N3001 (7.5). Esta especificación
     cubre los endpoints representativos; se completa por servicio en la ficha técnica.
   version: "1.0.0"
   contact:
-    name: Préstalo — Área de Comunicación Audiovisual UST
+    name: Pañol 2.0 — Área de Comunicación Audiovisual UST
 servers:
   - url: /
     description: Mismo origen (detrás del Ingress/Reverse proxy con TLS)

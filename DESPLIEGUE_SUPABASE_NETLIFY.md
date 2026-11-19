@@ -1,4 +1,4 @@
-# Publicar Préstalo en la nube — Supabase (base de datos) + Netlify (web + API)
+# Publicar Pañol 2.0 en la nube — Supabase (base de datos) + Netlify (web + API)
 
 Al terminar tendrás la **web y la API en una URL pública** `https://tu-sitio.netlify.app`
 (accesible desde cualquier celular, en cualquier red) y la **base de datos en Supabase**.
@@ -81,7 +81,7 @@ netlify env:set SMTP_HOST "smtp.gmail.com"
 netlify env:set SMTP_PORT "465"
 netlify env:set SMTP_USER "tucorreo@gmail.com"
 netlify env:set SMTP_PASS "la-contraseña-de-aplicacion-de-16-letras"
-netlify env:set MAIL_FROM "Préstalo <tucorreo@gmail.com>"
+netlify env:set MAIL_FROM "Pañol 2.0 <tucorreo@gmail.com>"
 netlify env:set PUBLIC_URL "https://TU-SITIO.netlify.app"
 ```
 Sin estas variables, la recuperación igual valida los datos pero **no envía**

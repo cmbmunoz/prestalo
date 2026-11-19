@@ -1,5 +1,5 @@
 # =====================================================================
-#  Préstalo — Imagen de contenedor (Node.js 20 / Express)
+#  Pañol 2.0 — Imagen de contenedor (Node.js 20 / Express)
 #  Build multi-etapa: dependencias en una etapa, runtime mínimo en la final.
 # =====================================================================
 

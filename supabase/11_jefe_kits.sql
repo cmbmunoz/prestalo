@@ -1,5 +1,5 @@
 -- =====================================================================
---  Préstalo — Build v20 · Migración 11
+--  Pañol 2.0 — Build v20 · Migración 11
 --  (1) Rol Jefe de Pañol  (2) Kits de equipos por asignatura (por modelo)
 --  IMPORTANTE: el ADD VALUE del enum va SOLO, sin usar el nuevo valor en la
 --  misma transacción (ver 12_seed_jefe_kits.sql para la carga demo).

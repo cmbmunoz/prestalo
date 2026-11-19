@@ -1,4 +1,4 @@
-# Deployment de la app web Préstalo (API + PWA).
+# Deployment de la app web Pañol 2.0 (API + PWA).
 apiVersion: apps/v1
 kind: Deployment
 metadata:

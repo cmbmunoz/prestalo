@@ -1,4 +1,4 @@
-# Configuración NO sensible de Préstalo.
+# Configuración NO sensible de Pañol 2.0.
 apiVersion: v1
 kind: ConfigMap
 metadata:

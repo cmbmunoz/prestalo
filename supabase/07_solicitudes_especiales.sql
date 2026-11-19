@@ -1,5 +1,5 @@
 -- =====================================================================
---  Préstalo — Migración: Solicitudes especiales con fechas y equipos
+--  Pañol 2.0 — Migración: Solicitudes especiales con fechas y equipos
 --  Correr UNA vez en Supabase → SQL Editor. Idempotente.
 -- =====================================================================
 ALTER TABLE solicitud_especial ADD COLUMN IF NOT EXISTS fecha_inicio TIMESTAMPTZ;

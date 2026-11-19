@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "Préstalo API",
-    "description": "Colección de requests del sistema Préstalo (UST). No contiene credenciales: usa las variables {{base_url}} y {{token}}. Conforme a DATI-N3001 9.6.2.",
+    "name": "Pañol 2.0 API",
+    "description": "Colección de requests del sistema Pañol 2.0 (UST). No contiene credenciales: usa las variables {{base_url}} y {{token}}. Conforme a DATI-N3001 9.6.2.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [

@@ -1,4 +1,4 @@
-// ===================== Préstalo — Frontend SPA =====================
+// ===================== Pañol 2.0 — Frontend SPA =====================
 let TOKEN = localStorage.getItem('prestalo_token') || null;
 let ME = null;                 // {user, asignaturas}
 let SEDE = null;               // sede activa (id) — admin puede cambiarla
@@ -96,7 +96,7 @@ if ($('#capNew')) $('#capNew').onclick = nuevoCaptcha;
 if ($('#verTerminos')) $('#verTerminos').onclick = (e) => {
   e.preventDefault();
   openModal(`<h3>Tratamiento de datos personales</h3>
-    <p style="font-size:13px;line-height:1.55">Préstalo trata tus datos personales (identificación, correo y registro de préstamos)
+    <p style="font-size:13px;line-height:1.55">Pañol 2.0 trata tus datos personales (identificación, correo y registro de préstamos)
     con la única finalidad de gestionar el préstamo e inventario de equipos del Área de Comunicación Audiovisual
     de la Instituto Profesional Santo Tomás.</p>
     <p style="font-size:13px;line-height:1.55">Los datos se usan solo para esa finalidad, no se ceden a terceros sin base legal
@@ -1385,7 +1385,7 @@ function imprimirComprobante(d) {
     h1{color:#0E8F86;font-size:20px;margin:0 0 2px}.s{color:#6B7785;font-size:12px;margin:0 0 18px}
     table{width:100%;border-collapse:collapse;font-size:13px}td{padding:7px 4px;border-bottom:1px solid #E4E8ED;vertical-align:top}
     td.k{color:#6B7785;width:34%}.ft{margin-top:26px;font-size:11px;color:#90a0b0;text-align:center}</style></head>
-    <body><h1>Préstalo · Comprobante de pedido</h1><p class="s">Instituto Profesional Santo Tomás — Área de Comunicación Audiovisual</p>
+    <body><h1>Pañol 2.0 · Comprobante de pedido</h1><p class="s">Instituto Profesional Santo Tomás — Área de Comunicación Audiovisual</p>
     <table>
       <tr><td class="k">N° de pedido</td><td>#${r.id}</td></tr>
       <tr><td class="k">Estado</td><td>${(ESTADO_RES[r.estado] || [r.estado])[0]}</td></tr>
@@ -1395,7 +1395,7 @@ function imprimirComprobante(d) {
       ${r.motivo ? `<tr><td class="k">Motivo</td><td>${escD(r.motivo)}</td></tr>` : ''}
       <tr><td class="k">Integrantes</td><td>${ints}</td></tr>
     </table>
-    <p class="ft">Documento generado por Préstalo · ${new Date().toLocaleString('es-CL')}</p>
+    <p class="ft">Documento generado por Pañol 2.0 · ${new Date().toLocaleString('es-CL')}</p>
     </body></html>`);
   w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
 }
@@ -1652,7 +1652,7 @@ async function viewRespaldos() {
       if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error || 'Error al generar respaldo'); }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = `respaldo_prestalo_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      const a = document.createElement('a'); a.href = url; a.download = `respaldo_panol2_${new Date().toISOString().slice(0, 10)}.xlsx`;
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
       toast('Respaldo descargado');
     } catch (e) { $('#rsErr').textContent = e.message; }
@@ -1676,7 +1676,7 @@ function viewManuales() {
   ];
   const lista = rol === 'admin' ? secciones.concat(adminExtra) : secciones;
   h(`<h2 class="page">Ayuda y manuales</h2>
-    <p class="muted">Guía rápida de uso de Préstalo.</p>
+    <p class="muted">Guía rápida de uso de Pañol 2.0.</p>
     <div style="display:flex;flex-direction:column;gap:10px;max-width:720px">
       ${lista.map(([t, d]) => `<div class="card"><h3 style="margin:0 0 6px">${t}</h3><p style="margin:0;font-size:13.5px;line-height:1.5">${d}</p></div>`).join('')}
     </div>
@@ -1845,7 +1845,7 @@ async function viewReportes() {
       h1{color:#0E8F86;font-size:18px;margin:0 0 2px}.s{color:#6B7785;font-size:11px;margin:0 0 16px}
       table{width:100%;border-collapse:collapse;font-size:12px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #E4E8ED}
       th{background:#EFF2F7}</style></head><body>
-      <h1>Préstalo · ${escD(ultimo.titulo)}</h1><p class="s">Instituto Profesional Santo Tomás — ${new Date().toLocaleString('es-CL')}</p>
+      <h1>Pañol 2.0 · ${escD(ultimo.titulo)}</h1><p class="s">Instituto Profesional Santo Tomás — ${new Date().toLocaleString('es-CL')}</p>
       <table><thead><tr>${ultimo.columnas.map(c => `<th>${escD(c)}</th>`).join('')}</tr></thead>
       <tbody>${ultimo.filas.map(f => `<tr>${f.map(v => `<td>${escD(v)}</td>`).join('')}</tr>`).join('')}</tbody></table>
       </body></html>`);

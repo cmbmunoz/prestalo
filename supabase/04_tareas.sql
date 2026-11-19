@@ -1,5 +1,5 @@
 -- =====================================================================
---  Préstalo — Migración: Módulo de Tareas (flujo académico)
+--  Pañol 2.0 — Migración: Módulo de Tareas (flujo académico)
 --  Correr UNA vez en Supabase → SQL Editor. Es idempotente (IF NOT EXISTS).
 --  No borra datos. Requiere las tablas asignatura, equipo, reserva, usuario.
 -- =====================================================================

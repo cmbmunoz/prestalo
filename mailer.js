@@ -1,5 +1,5 @@
 // =====================================================================
-//  Préstalo — Envío de correo y token de recuperación de contraseña
+//  Pañol 2.0 — Envío de correo y token de recuperación de contraseña
 //  Usa nodemailer con SMTP (configurable por variables de entorno).
 //  Sin credenciales SMTP, opera en modo simulación (registra el enlace).
 // =====================================================================
@@ -28,7 +28,7 @@ function verifyResetToken(token) {
 
 async function sendResetEmail(to, link) {
   const host = process.env.SMTP_HOST, user = process.env.SMTP_USER, pass = process.env.SMTP_PASS;
-  const from = process.env.MAIL_FROM || 'Préstalo <no-reply@prestalo.app>';
+  const from = process.env.MAIL_FROM || 'Pañol 2.0 <no-reply@prestalo.app>';
   if (!host || !user || !pass || !nodemailer) {
     console.log(`[EMAIL SIMULADO → ${to}] Enlace de recuperación: ${link}`);
     return { simulado: true };
@@ -38,10 +38,10 @@ async function sendResetEmail(to, link) {
     host, port, secure: port === 465, auth: { user, pass },
   });
   await transport.sendMail({
-    from, to, subject: 'Recuperación de contraseña — Préstalo',
+    from, to, subject: 'Recuperación de contraseña — Pañol 2.0',
     html: `
       <div style="font-family:Arial,sans-serif;color:#1a2230">
-        <h2 style="color:#0E8F86">Préstalo · Universidad Santo Tomás</h2>
+        <h2 style="color:#0E8F86">Pañol 2.0 · Universidad Santo Tomás</h2>
         <p>Recibimos una solicitud para restablecer tu contraseña.</p>
         <p><a href="${link}" style="background:#0E8F86;color:#fff;padding:11px 18px;border-radius:8px;text-decoration:none;font-weight:bold">Restablecer contraseña</a></p>
         <p style="font-size:13px;color:#666">El enlace es válido por 1 hora. Si no solicitaste esto, ignora este correo.</p>

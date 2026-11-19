@@ -1,5 +1,5 @@
 -- =====================================================================
---  Préstalo — Migración: Bloqueo de horarios + Aprobación de grupos
+--  Pañol 2.0 — Migración: Bloqueo de horarios + Aprobación de grupos
 --  Correr UNA vez en Supabase → SQL Editor. Es idempotente (IF NOT EXISTS).
 --  No borra datos. Requiere las tablas equipo, usuario, reserva.
 -- =====================================================================

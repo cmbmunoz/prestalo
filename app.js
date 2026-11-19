@@ -1640,7 +1640,7 @@ app.get('/api/admin/respaldo', auth, requireRole('admin'), wrap(async (req, res)
   addSheet('Reservas', ['N°', 'Usuario', 'Equipo', 'Inicio', 'Término', 'Estado'],
     reservas.map(r => [r.id, r.usuario, r.equipo, fdt(r.fecha_inicio), fdt(r.fecha_fin), r.estado]));
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.setHeader('Content-Disposition', `attachment; filename=respaldo_prestalo_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  res.setHeader('Content-Disposition', `attachment; filename=respaldo_panol2_${new Date().toISOString().slice(0, 10)}.xlsx`);
   await wb.xlsx.write(res); res.end();
 }));
 
@@ -1764,14 +1764,14 @@ app.get('/api/admin/reportes/xlsx', auth, requireRole('admin'), wrap(async (req,
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Reporte');
   ws.mergeCells(1, 1, 1, data.columnas.length);
-  const t = ws.getCell(1, 1); t.value = `Préstalo · ${data.titulo}`; t.font = { bold: true, size: 14, color: { argb: 'FF0E8F86' } };
+  const t = ws.getCell(1, 1); t.value = `Pañol 2.0 · ${data.titulo}`; t.font = { bold: true, size: 14, color: { argb: 'FF0E8F86' } };
   const sub = ws.getCell(2, 1); ws.mergeCells(2, 1, 2, data.columnas.length);
   sub.value = `Universidad Santo Tomás — generado ${new Date().toLocaleString('es-CL')}`; sub.font = { size: 10, color: { argb: 'FF6B7785' } };
   const head = ws.addRow(data.columnas); head.font = { bold: true }; head.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFF2F7' } }; });
   data.filas.forEach(f => ws.addRow(f));
   data.columnas.forEach((c, i) => { ws.getColumn(i + 1).width = Math.max(14, String(c).length + 4); });
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.setHeader('Content-Disposition', `attachment; filename=reporte_${req.query.tipo || 'prestalo'}.xlsx`);
+  res.setHeader('Content-Disposition', `attachment; filename=reporte_${req.query.tipo || 'panol2'}.xlsx`);
   await wb.xlsx.write(res); res.end();
 }));
 

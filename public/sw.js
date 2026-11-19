@@ -1,5 +1,5 @@
 // =====================================================================
-//  Préstalo — Service Worker (PWA)
+//  Pañol 2.0 — Service Worker (PWA)
 //  - Cachea el "app shell" para carga rápida y acceso sin conexión.
 //  - La API (/api/*) y los POST siempre van a la red (datos frescos).
 //  - Estrategia: CÓDIGO (html/js/css) = red primero (siempre fresco con
@@ -7,7 +7,7 @@
 //    manifest, íconos) = caché primero. La API (/api/*) siempre a la red.
 //  Sube la versión del caché al cambiar archivos del shell para refrescar.
 // =====================================================================
-const CACHE = 'prestalo-v21';
+const CACHE = 'panol2-v22';
 const SHELL = [
   '/', '/index.html', '/reset.html',
   '/styles.css', '/app.js',

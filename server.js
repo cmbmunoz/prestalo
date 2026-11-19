@@ -1,7 +1,7 @@
-// Servidor web Préstalo (API + PWA). Punto de entrada del contenedor.
+// Servidor web Pañol 2.0 (API + PWA). Punto de entrada del contenedor.
 const { app, expirarNoShow } = require('./app');
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Préstalo API escuchando en http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`Pañol 2.0 API escuchando en http://localhost:${PORT}`));
 
 // RF-56: expiración por no-show cada 5 min, dentro del proceso web.
 // En un despliegue con varias réplicas, poner DISABLE_CRON=true en las réplicas

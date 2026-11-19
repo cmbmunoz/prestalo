@@ -1,5 +1,5 @@
 -- =====================================================================
---  Préstalo — Build v20 · Migración 12 (datos demo)
+--  Pañol 2.0 — Build v20 · Migración 12 (datos demo)
 --  Usuario Jefe de Pañol demo + un kit demo por asignatura.
 --  Depende de 11_jefe_kits.sql (enum ya commiteado) y de 02_seed.
 --  Idempotente.

@@ -1,5 +1,5 @@
 -- =====================================================================
---  Préstalo — Migración de limpieza: eliminar Consultas por WhatsApp
+--  Pañol 2.0 — Migración de limpieza: eliminar Consultas por WhatsApp
 --  Correr UNA vez en Supabase → SQL Editor. Operación destructiva:
 --  elimina la tabla de consultas y su tipo asociado.
 -- =====================================================================

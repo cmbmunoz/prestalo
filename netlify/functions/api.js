@@ -1,4 +1,4 @@
-// Netlify Function: expone la API Express de Préstalo en /.netlify/functions/api
+// Netlify Function: expone la API Express de Pañol 2.0 en /.netlify/functions/api
 // Las rutas de la app son /api/...  El netlify.toml reescribe /api/* hacia aquí.
 const serverless = require('serverless-http');
 const { app } = require('../../app');

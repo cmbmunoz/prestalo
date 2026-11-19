@@ -1,5 +1,5 @@
 # =====================================================================
-#  Préstalo — Orquestación para DESARROLLO / PRUEBAS
+#  Pañol 2.0 — Orquestación para DESARROLLO / PRUEBAS
 #  Levanta la app + una base PostgreSQL local idéntica a producción.
 #  Uso:
 #    1) copiar .env.example a .env y completar DB_PASSWORD y PRESTALO_SECRET

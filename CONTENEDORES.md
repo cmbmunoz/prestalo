@@ -1,6 +1,6 @@
-# Préstalo — Ejecución en contenedores
+# Pañol 2.0 — Ejecución en contenedores
 
-Guía rápida para construir, ejecutar y desplegar Préstalo como contenedores.
+Guía rápida para construir, ejecutar y desplegar Pañol 2.0 como contenedores.
 
 ## 1. Desarrollo local (Docker Compose)
 

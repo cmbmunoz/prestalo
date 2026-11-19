@@ -1,5 +1,5 @@
 -- =====================================================================
---  Préstalo — Migración: Anuncios (tablón de avisos por sede)
+--  Pañol 2.0 — Migración: Anuncios (tablón de avisos por sede)
 --  Correr UNA vez en Supabase → SQL Editor. Idempotente (IF NOT EXISTS).
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS anuncio (

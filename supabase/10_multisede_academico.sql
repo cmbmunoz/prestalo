@@ -1,5 +1,5 @@
 -- =====================================================================
---  Préstalo — Datos académicos multi-sede (demo)
+--  Pañol 2.0 — Datos académicos multi-sede (demo)
 --  Permite que el Docente Demo (22.222.222-2) tenga una asignatura en la
 --  SEDE 2 además de la sede 1 → queda habilitado para operar multi-sede.
 --  Depende de 02_seed y 09_emulacion_multisede. Idempotente.

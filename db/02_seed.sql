@@ -7,7 +7,7 @@ BEGIN;
 
 -- Entidades (white-label)
 INSERT INTO entidad (nombre, marca_color, bodega_label, activo) VALUES
-  ('Préstalo — Universidad Santo Tomás', '#0E8F86', 'Pañol',  TRUE),  -- id 1
+  ('Pañol 2.0 — Universidad Santo Tomás', '#0E8F86', 'Pañol',  TRUE),  -- id 1
   ('LogiCorp',                           '#E8590C', 'Bodega', TRUE),  -- id 2
   ('Campus Lab',                         '#2563EB', 'Almacén',TRUE);  -- id 3
 

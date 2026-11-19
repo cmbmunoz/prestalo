@@ -1,4 +1,4 @@
-# Blueprint de Render para Préstalo (web + API en un solo servicio Node/Express).
+# Blueprint de Render para Pañol 2.0 (web + API en un solo servicio Node/Express).
 # Render lee este archivo y crea el servicio automáticamente.
 services:
   - type: web

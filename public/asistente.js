@@ -1,7 +1,7 @@
 /* =====================================================================
-   Préstalo — Asistente IA flotante (web). Auto-contenido: inyecta su
+   Pañol 2.0 — Asistente IA flotante (web). Auto-contenido: inyecta su
    propio estilo y DOM, y conversa contra POST /api/asistente.
-   Alcance: solo app Préstalo + normativa del pañol (lo acota el backend).
+   Alcance: solo app Pañol 2.0 + normativa del pañol (lo acota el backend).
    ===================================================================== */
 (function () {
   'use strict';
@@ -51,10 +51,10 @@
   var panel = document.createElement('div');
   panel.className = 'pa-panel';
   panel.innerHTML = ''
-    + '<div class="pa-head"><div><div class="pa-t">Asistente Préstalo</div><div class="pa-s">App y normativa del pañol UST</div></div>'
+    + '<div class="pa-head"><div><div class="pa-t">Asistente Pañol 2.0</div><div class="pa-s">App y normativa del pañol UST</div></div>'
     + '<button class="pa-x" aria-label="Cerrar">×</button></div>'
     + '<div class="pa-body" id="paBody"></div>'
-    + '<div class="pa-note">Responde solo sobre Préstalo y el pañol de la UST. Verifica datos críticos con el personal de Pañol.</div>'
+    + '<div class="pa-note">Responde solo sobre Pañol 2.0 y el pañol de la UST. Verifica datos críticos con el personal de Pañol.</div>'
     + '<div class="pa-foot"><input id="paInput" type="text" placeholder="Escribe tu consulta..." autocomplete="off">'
     + '<button id="paSend" aria-label="Enviar">Enviar</button></div>';
 
@@ -82,7 +82,7 @@
 
   function sugerencias() {
     var chips = ['¿Con cuánta anticipación debo reservar?', '¿Qué pasa si devuelvo tarde?',
-      '¿Cómo recupero mi clave?', '¿Para qué sirve Préstalo?'];
+      '¿Cómo recupero mi clave?', '¿Para qué sirve Pañol 2.0?'];
     var wrap = document.createElement('div'); wrap.className = 'pa-chips';
     chips.forEach(function (c) {
       var b = document.createElement('button'); b.className = 'pa-chip'; b.textContent = c;
@@ -95,7 +95,7 @@
   var saludado = false;
   function saludar() {
     if (saludado) return; saludado = true;
-    addMsg('¡Hola! Soy el asistente de Préstalo. Puedo ayudarte con el uso de la app y con la normativa del pañol de la UST. ¿En qué te ayudo?', 'bot');
+    addMsg('¡Hola! Soy el asistente de Pañol 2.0. Puedo ayudarte con el uso de la app y con la normativa del pañol de la UST. ¿En qué te ayudo?', 'bot');
     sugerencias();
   }
 

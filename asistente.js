@@ -1,9 +1,9 @@
 // =====================================================================
-//  Préstalo — Asistente de IA (agente acotado a la app + normativa UST)
+//  Pañol 2.0 — Asistente de IA (agente acotado a la app + normativa UST)
 //  Proveedor: Anthropic (Messages API). Requiere ANTHROPIC_API_KEY.
 //  MVP: responde consultas sobre el uso de la app y la normativa del
 //  pañol, con "grounding" en el texto de la normativa (sin inventar).
-//  Guardarraíl: solo responde temas de Préstalo y de la universidad.
+//  Guardarraíl: solo responde temas de Pañol 2.0 y de la universidad.
 // =====================================================================
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -56,10 +56,10 @@ SANCIONES (por atraso en la devolución, sin justificación previa)
     Dirección de Administración y Operaciones (DAO) de la sede.
 `.trim();
 
-// --- Cómo se usa Préstalo (FAQ funcional de la app) ---
+// --- Cómo se usa Pañol 2.0 (FAQ funcional de la app) ---
 const APP_FAQ = `
 QUÉ ES PRÉSTALO
-Préstalo es la plataforma de préstamo e inventario de equipos del Área de Comunicación
+Pañol 2.0 es la plataforma de préstamo e inventario de equipos del Área de Comunicación
 Audiovisual de la Universidad Santo Tomás (evolución de "Pañol Online"). Tiene app móvil (iOS)
 y sitio web.
 
@@ -83,17 +83,17 @@ FUNCIONES PRINCIPALES
 
 // --- Instrucciones del sistema (alcance + guardarraíles + anti-alucinación) ---
 function systemPrompt() {
-  return `Eres el asistente virtual de "Préstalo", la plataforma de préstamo e inventario de
+  return `Eres el asistente virtual de "Pañol 2.0", la plataforma de préstamo e inventario de
 equipos del Área de Comunicación Audiovisual de la Universidad Santo Tomás (UST).
 
 TU ALCANCE (y solo este):
-1) Cómo usar la aplicación Préstalo.
+1) Cómo usar la aplicación Pañol 2.0.
 2) La normativa del pañol de la UST y temas académicos relacionados con el préstamo de equipos.
 
 REGLAS:
 - Responde ÚNICAMENTE preguntas dentro de ese alcance. Si te preguntan cualquier otra cosa
   (noticias, programación general, temas personales, etc.), responde exactamente:
-  "Solo puedo ayudarte con Préstalo y con temas del pañol de la Universidad Santo Tomás."
+  "Solo puedo ayudarte con Pañol 2.0 y con temas del pañol de la Universidad Santo Tomás."
 - Básate SOLO en la información de CONTEXTO que se te entrega (normativa y guía de la app).
   No inventes plazos, sanciones ni funciones. Si la respuesta no está en el contexto, dilo con
   claridad y sugiere consultar al personal de Pañol o a la Jefatura de Carrera.
