@@ -276,19 +276,29 @@ async function viewCatalogo() {
   if (!eq.length) { $('#cat').innerHTML = '<p class="muted">No hay equipos habilitados para tu asignatura.</p>'; return; }
   const dispMap = {};
   resumen.forEach(r => { dispMap[r.categoria + '|' + r.articulo] = r; }); // disponibles/total por artículo en la sede
-  $('#cat').innerHTML = eq.map(e => {
-    const [lab, cls] = ESTADO_EQ[e.estado] || [e.estado, 'info'];
+  // Agrupar por artículo (categoría + equipo): una sola tarjeta por modelo, con su resumen.
+  const grupos = {};
+  eq.forEach(e => {
+    const key = e.categoria + '|' + e.nombre;
+    if (!grupos[key]) grupos[key] = { rep: e, unidades: [], dispUnidad: null };
+    grupos[key].unidades.push(e);
+    if (e.estado === 'disponible' && !grupos[key].dispUnidad) grupos[key].dispUnidad = e;
+  });
+  $('#cat').innerHTML = Object.keys(grupos).map(key => {
+    const g = grupos[key]; const e = g.rep;
     const rec = e.tipo === 'recinto' ? '<span class="pill warn">Requiere autorización</span>' : '';
-    const inf = dispMap[e.categoria + '|' + e.nombre];
-    const disp = inf ? inf.disponible : (e.estado === 'disponible' ? 1 : 0);
-    const tot = inf ? inf.total : 1;
+    const inf = dispMap[key];
+    const disp = inf ? inf.disponible : g.unidades.filter(u => u.estado === 'disponible').length;
+    const tot = inf ? inf.total : g.unidades.length;
+    const [lab, cls] = disp > 0 ? ['Disponible', 'ok'] : ['Sin disponibilidad', 'bad'];
     const dispPill = `<span class="pill ${disp > 0 ? 'ok' : 'bad'}" title="Unidades disponibles de este artículo">Disponibles: ${disp}/${tot}</span>`;
+    const target = g.dispUnidad ? g.dispUnidad.id : '';
     return `<div class="card">
       <div class="thumb">${icon(e.categoria)}</div>
       <h3>${e.nombre}</h3><div class="cat">${e.categoria}${e.marca ? ' · ' + e.marca : ''}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${dispPill}<span class="pill ${cls}">${lab}</span>${rec}</div>
       <div style="display:flex;gap:6px">
-        <button class="btn sm" style="flex:1" ${e.estado !== 'disponible' ? 'disabled style="opacity:.5;flex:1"' : ''} data-id="${e.id}">Reservar</button>
+        <button class="btn sm" style="flex:1" ${disp > 0 ? `data-id="${target}"` : 'disabled style="opacity:.5;flex:1"'}>Reservar</button>
         <button class="btn sm ghost" data-ficha="${e.id}">Ficha</button>
       </div>
     </div>`;
