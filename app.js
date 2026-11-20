@@ -774,7 +774,9 @@ app.post('/api/admin/usuarios', auth, requireRole('admin'), wrap(async (req, res
       [rut, nombre, email || null, rol, est, hash, req.sede]);
     res.status(201).json({ ok: true });
   } catch (e) {
-    if (e.code === '23505') return res.status(409).json({ error: 'Ya existe un usuario con ese RUT o correo' });
+    if (e.code === '23505') return res.status(409).json({ error: e.constraint === 'uq_usuario_email'
+      ? 'El correo ya se encuentra registrado en otro usuario.'
+      : 'Ya existe un usuario con ese RUT.' });
     throw e;
   }
 }));
@@ -783,10 +785,19 @@ app.put('/api/admin/usuarios/:rut', auth, requireRole('admin'), wrap(async (req,
   const { nombre, email, rol, estado } = req.body || {};
   if (rol && !ROLES_OK.includes(rol)) return res.status(400).json({ error: 'Rol no válido' });
   if (estado && !ESTADOS_OK.includes(estado)) return res.status(400).json({ error: 'Estado no válido' });
-  const r = await db.query(
-    `UPDATE usuario SET nombre=COALESCE($2,nombre), email=COALESCE($3,email), rol=COALESCE($4,rol), estado=COALESCE($5,estado)
-     WHERE rut=$1 AND entidad_id=$6`,
-    [req.params.rut, nombre || null, email || null, rol || null, estado || null, req.sede]);
+  let r;
+  try {
+    r = await db.query(
+      `UPDATE usuario SET nombre=COALESCE($2,nombre), email=COALESCE($3,email), rol=COALESCE($4,rol), estado=COALESCE($5,estado)
+       WHERE rut=$1 AND entidad_id=$6`,
+      [req.params.rut, nombre || null, email || null, rol || null, estado || null, req.sede]);
+  } catch (e) {
+    if (e.code === '23505')
+      return res.status(409).json({ error: e.constraint === 'uq_usuario_email'
+        ? 'El correo ya se encuentra registrado en otro usuario.'
+        : 'Conflicto de datos únicos.' });
+    throw e;
+  }
   if (!r.rowCount) return res.status(404).json({ error: 'Usuario no encontrado' });
   res.json({ ok: true });
 }));
@@ -906,6 +917,8 @@ app.put('/api/perfil', auth, wrap(async (req, res) => {
   try {
     await db.query(`UPDATE usuario SET ${sets.join(', ')} WHERE rut=$${i}`, vals);
   } catch (e) {
+    if (e.code === '23505') // correo duplicado (uq_usuario_email, CITEXT)
+      return res.status(409).json({ error: 'El correo ya se encuentra registrado en otro usuario.' });
     if (e.code === '42703') { // sin columna foto_url: reintentar sin ella
       return res.status(400).json({ error: 'Campo no disponible' });
     }
