@@ -136,10 +136,15 @@ app.get('/api/me', auth, wrap(async (req, res) => {
   let sedes = [];
   if (ids.length) {
     try {
-      sedes = (await db.query(`SELECT id, nombre, horas_anticipacion FROM entidad WHERE id = ANY($1) ORDER BY nombre`, [ids])).rows;
+      sedes = (await db.query(`SELECT id, nombre, horas_anticipacion, permite_solicitud_especial, horas_anticipacion_excepcional, rol_autoriza_especial FROM entidad WHERE id = ANY($1) ORDER BY nombre`, [ids])).rows;
     } catch (e) {
-      if (e.code !== '42703') throw e; // columna horas_anticipacion aún sin migrar
-      sedes = (await db.query(`SELECT id, nombre FROM entidad WHERE id = ANY($1) ORDER BY nombre`, [ids])).rows;
+      if (e.code !== '42703') throw e; // columnas de política aún sin migrar
+      try {
+        sedes = (await db.query(`SELECT id, nombre, horas_anticipacion FROM entidad WHERE id = ANY($1) ORDER BY nombre`, [ids])).rows;
+      } catch (e2) {
+        if (e2.code !== '42703') throw e2;
+        sedes = (await db.query(`SELECT id, nombre FROM entidad WHERE id = ANY($1) ORDER BY nombre`, [ids])).rows;
+      }
     }
   }
   res.json({
@@ -1341,14 +1346,42 @@ app.get('/api/asignaturas/:id/equipos', auth, wrap(async (req, res) => {
 app.post('/api/solicitudes', auth, wrap(async (req, res) => {
   const { asignatura_id, descripcion, fecha_inicio, fecha_fin, duracion, equipos } = req.body || {};
   if (!descripcion || !descripcion.trim()) return res.status(400).json({ error: 'La descripción es obligatoria' });
+
+  // Sede de la solicitud = sede del solicitante. Política del flujo excepcional por sede.
+  const su = (await db.query(`SELECT entidad_id FROM usuario WHERE rut=$1`, [req.user.rut])).rows[0];
+  const sedeId = (su && su.entidad_id) || req.sede || null;
+  let pol = { permite: true, hae: 0 };
+  try {
+    const p = (await db.query(
+      `SELECT permite_solicitud_especial, horas_anticipacion_excepcional FROM entidad WHERE id=$1`, [sedeId])).rows[0];
+    if (p) pol = { permite: p.permite_solicitud_especial !== false, hae: Number(p.horas_anticipacion_excepcional) || 0 };
+  } catch (e) { if (e.code !== '42703') throw e; } // política aún sin migrar → se asume habilitada
+  if (!pol.permite)
+    return res.status(400).json({ error: 'Esta sede no habilita solicitudes excepcionales. Coordina con el pañol.' });
+  if (pol.hae > 0 && fecha_inicio) {
+    const horas = (new Date(fecha_inicio) - new Date()) / 3600000;
+    if (horas < pol.hae)
+      return res.status(400).json({ error: `Las solicitudes excepcionales de esta sede requieren al menos ${pol.hae} h de anticipación.` });
+  }
+
   let docente = null;
   if (asignatura_id) {
     const d = await db.query(`SELECT usuario_rut FROM usuario_asignatura WHERE asignatura_id=$1 AND rol_en_asig='docente' LIMIT 1`, [asignatura_id]);
     docente = d.rows[0] ? d.rows[0].usuario_rut : null;
   }
-  const r = (await db.query(
-    `INSERT INTO solicitud_especial (usuario_rut, asignatura_id, docente_rut, descripcion, estado)
-     VALUES ($1,$2,$3,$4,'pendiente') RETURNING id`, [req.user.rut, asignatura_id || null, docente, descripcion.trim()])).rows[0];
+  let r;
+  try {
+    r = (await db.query(
+      `INSERT INTO solicitud_especial (usuario_rut, asignatura_id, docente_rut, entidad_id, descripcion, estado)
+       VALUES ($1,$2,$3,$4,$5,'pendiente') RETURNING id`,
+      [req.user.rut, asignatura_id || null, docente, sedeId, descripcion.trim()])).rows[0];
+  } catch (e) {
+    if (e.code !== '42703') throw e; // columna entidad_id aún sin migrar
+    r = (await db.query(
+      `INSERT INTO solicitud_especial (usuario_rut, asignatura_id, docente_rut, descripcion, estado)
+       VALUES ($1,$2,$3,$4,'pendiente') RETURNING id`,
+      [req.user.rut, asignatura_id || null, docente, descripcion.trim()])).rows[0];
+  }
   // Campos adicionales (tolerante a migración 07 no aplicada)
   try {
     if (fecha_inicio || fecha_fin || duracion) {
@@ -1382,28 +1415,71 @@ app.get('/api/solicitudes/mias', auth, wrap(async (req, res) => {
   res.json(rows);
 }));
 
-app.get('/api/solicitudes/pendientes', auth, requireRole('docente', 'admin'), wrap(async (req, res) => {
+app.get('/api/solicitudes/pendientes', auth, requireRole('docente', 'jefe_panol', 'admin'), wrap(async (req, res) => {
+  // Queue acotado por sede: admin ve todas sus sedes; el resto solo las sedes en que opera.
+  // Autorización: admin, el docente relacionado a la asignatura, o el rol que la sede define
+  // en rol_autoriza_especial (docente | jefe_panol | admin).
+  const esTodos = req.sedesPermitidas === null;
+  const baseRich = `FROM solicitud_especial s
+       JOIN usuario u ON u.rut=s.usuario_rut
+       LEFT JOIN asignatura a ON a.id=s.asignatura_id
+       LEFT JOIN entidad en ON en.id=s.entidad_id
+     WHERE s.estado='pendiente'
+       AND (${esTodos ? 'TRUE' : 's.entidad_id = ANY($3)'})
+       AND ( $2='admin'
+             OR s.docente_rut=$1
+             OR s.asignatura_id IN (SELECT asignatura_id FROM usuario_asignatura WHERE usuario_rut=$1 AND rol_en_asig='docente')
+             OR en.rol_autoriza_especial = $2 )
+     ORDER BY s.created_at`;
+  const paramsRich = esTodos ? [req.user.rut, req.user.rol] : [req.user.rut, req.user.rol, req.sedesPermitidas];
+  try {
+    const { rows } = await db.query(
+      `SELECT s.id, s.descripcion, s.estado, s.created_at, s.fecha_inicio, s.fecha_fin, s.duracion, u.nombre AS alumno, u.rut, a.nombre AS asignatura, en.nombre AS sede,
+              COALESCE((SELECT array_agg(e.nombre ORDER BY e.nombre) FROM solicitud_equipo se JOIN equipo e ON e.id=se.equipo_id WHERE se.solicitud_id=s.id), '{}') AS equipos
+       ${baseRich}`, paramsRich);
+    return res.json(rows);
+  } catch (e) { if (e.code !== '42703' && e.code !== '42P01') throw e; } // migraciones 07/15 aún sin aplicar
+
+  // Fallback (sin entidad_id / sin solicitud_equipo): comportamiento previo por relación docente.
   const base = `FROM solicitud_especial s JOIN usuario u ON u.rut=s.usuario_rut LEFT JOIN asignatura a ON a.id=s.asignatura_id
      WHERE s.estado='pendiente' AND (s.docente_rut=$1
            OR s.asignatura_id IN (SELECT asignatura_id FROM usuario_asignatura WHERE usuario_rut=$1 AND rol_en_asig='docente')
            OR $2='admin')
      ORDER BY s.created_at`;
-  try {
-    const { rows } = await db.query(
-      `SELECT s.id, s.descripcion, s.estado, s.created_at, s.fecha_inicio, s.fecha_fin, s.duracion, u.nombre AS alumno, u.rut, a.nombre AS asignatura,
-              COALESCE((SELECT array_agg(e.nombre ORDER BY e.nombre) FROM solicitud_equipo se JOIN equipo e ON e.id=se.equipo_id WHERE se.solicitud_id=s.id), '{}') AS equipos
-       ${base}`, [req.user.rut, req.user.rol]);
-    return res.json(rows);
-  } catch (e) { if (e.code !== '42703' && e.code !== '42P01') throw e; }
   const { rows } = await db.query(
     `SELECT s.id, s.descripcion, s.estado, s.created_at, u.nombre AS alumno, u.rut, a.nombre AS asignatura ${base}`,
     [req.user.rut, req.user.rol]);
   res.json(rows);
 }));
 
-app.post('/api/solicitudes/:id/responder', auth, requireRole('docente', 'admin'), wrap(async (req, res) => {
+app.post('/api/solicitudes/:id/responder', auth, requireRole('docente', 'jefe_panol', 'admin'), wrap(async (req, res) => {
   const { estado, respuesta } = req.body || {};
   if (!['aprobada', 'rechazada'].includes(estado)) return res.status(400).json({ error: 'Estado no válido' });
+
+  const cur = (await db.query(
+    `SELECT estado, usuario_rut, fecha_inicio, fecha_fin FROM solicitud_especial WHERE id=$1`, [req.params.id])).rows[0];
+  if (!cur || cur.estado !== 'pendiente') return res.status(404).json({ error: 'Solicitud no encontrada o ya respondida' });
+
+  // "Según disponibilidad": al APROBAR con fechas, verificar que cada equipo esté libre
+  // en la ventana ANTES de materializar. Si choca, la solicitud queda pendiente.
+  let eqs = [];
+  if (estado === 'aprobada' && cur.fecha_inicio && cur.fecha_fin) {
+    try {
+      eqs = (await db.query(`SELECT equipo_id FROM solicitud_equipo WHERE solicitud_id=$1`, [req.params.id])).rows;
+    } catch (e) { if (e.code !== '42P01') throw e; } // sin tabla solicitud_equipo (migración 07)
+    for (const row of eqs) {
+      const choca = (await db.query(
+        `SELECT 1 FROM reserva
+          WHERE equipo_id=$1 AND estado IN ('pendiente','confirmada','en_uso')
+            AND fecha_fin > $2 AND fecha_inicio < $3 LIMIT 1`,
+        [row.equipo_id, cur.fecha_inicio, cur.fecha_fin])).rows[0];
+      if (choca) {
+        const eq = (await db.query(`SELECT nombre FROM equipo WHERE id=$1`, [row.equipo_id])).rows[0];
+        return res.status(409).json({ error: `El equipo "${eq ? eq.nombre : row.equipo_id}" no está disponible en esa fecha. La solicitud queda pendiente.` });
+      }
+    }
+  }
+
   const r = await db.query(
     `UPDATE solicitud_especial SET estado=$2, respuesta=$3, docente_rut=$4, updated_at=now()
      WHERE id=$1 AND estado='pendiente'`, [req.params.id, estado, respuesta || null, req.user.rut]);
@@ -1412,25 +1488,20 @@ app.post('/api/solicitudes/:id/responder', auth, requireRole('docente', 'admin')
   // Al APROBAR, la solicitud se materializa como reserva(s) confirmada(s), de modo que
   // quede reflejada en la disponibilidad del equipo y en la recepción (agenda) del pañol.
   let reservas_creadas = 0;
-  if (estado === 'aprobada') {
+  if (estado === 'aprobada' && cur.fecha_inicio && cur.fecha_fin && eqs.length) {
     try {
-      const s = (await db.query(
-        `SELECT usuario_rut, fecha_inicio, fecha_fin FROM solicitud_especial WHERE id=$1`, [req.params.id])).rows[0];
-      if (s && s.fecha_inicio && s.fecha_fin) {
-        const eqs = (await db.query(`SELECT equipo_id FROM solicitud_equipo WHERE solicitud_id=$1`, [req.params.id])).rows;
-        const sol = (await db.query(`SELECT nombre FROM usuario WHERE rut=$1`, [s.usuario_rut])).rows[0];
-        for (const row of eqs) {
-          const nr = (await db.query(
-            `INSERT INTO reserva (usuario_rut, equipo_id, fecha_inicio, fecha_fin, estado, uso_academico, es_grupal, motivo)
-             VALUES ($1,$2,$3,$4,'confirmada',TRUE,FALSE,$5) RETURNING id`,
-            [s.usuario_rut, row.equipo_id, s.fecha_inicio, s.fecha_fin, `Solicitud especial #${req.params.id}`])).rows[0];
-          await db.query(
-            `INSERT INTO integrante (reserva_id, usuario_rut, nombre, rut, es_responsable)
-             VALUES ($1,$2,$3,$4,TRUE) ON CONFLICT (reserva_id, rut) DO NOTHING`,
-            [nr.id, s.usuario_rut, sol ? sol.nombre : s.usuario_rut, s.usuario_rut]);
-          await db.query(`UPDATE equipo SET estado='reservado' WHERE id=$1`, [row.equipo_id]);
-          reservas_creadas++;
-        }
+      const sol = (await db.query(`SELECT nombre FROM usuario WHERE rut=$1`, [cur.usuario_rut])).rows[0];
+      for (const row of eqs) {
+        const nr = (await db.query(
+          `INSERT INTO reserva (usuario_rut, equipo_id, fecha_inicio, fecha_fin, estado, uso_academico, es_grupal, motivo)
+           VALUES ($1,$2,$3,$4,'confirmada',TRUE,FALSE,$5) RETURNING id`,
+          [cur.usuario_rut, row.equipo_id, cur.fecha_inicio, cur.fecha_fin, `Solicitud especial #${req.params.id}`])).rows[0];
+        await db.query(
+          `INSERT INTO integrante (reserva_id, usuario_rut, nombre, rut, es_responsable)
+           VALUES ($1,$2,$3,$4,TRUE) ON CONFLICT (reserva_id, rut) DO NOTHING`,
+          [nr.id, cur.usuario_rut, sol ? sol.nombre : cur.usuario_rut, cur.usuario_rut]);
+        await db.query(`UPDATE equipo SET estado='reservado' WHERE id=$1`, [row.equipo_id]);
+        reservas_creadas++;
       }
     } catch (e) { if (e.code !== '42703' && e.code !== '42P01') throw e; } // migración 07 no aplicada → se omite
   }
@@ -1564,47 +1635,72 @@ app.get('/api/sedes', auth, wrap(async (req, res) => {
   // sus asignaturas; alumno/pañolero: la suya). Habilita el selector multi-sede.
   const ids = await sedesScope(req);
   const cols = 'id, nombre, bodega_label, activo';
+  // Campos de política por sede (migración 13 y 15). Fallback si aún no se migran.
+  const colsPol = `${cols}, horas_anticipacion, permite_solicitud_especial, horas_anticipacion_excepcional, rol_autoriza_especial`;
   let sedes = [];
   if (ids.length) {
     try {
-      sedes = (await db.query(`SELECT ${cols}, horas_anticipacion FROM entidad WHERE id = ANY($1) ORDER BY nombre`, [ids])).rows;
+      sedes = (await db.query(`SELECT ${colsPol} FROM entidad WHERE id = ANY($1) ORDER BY nombre`, [ids])).rows;
     } catch (e) {
-      if (e.code !== '42703') throw e; // columna aún sin migrar
-      sedes = (await db.query(`SELECT ${cols} FROM entidad WHERE id = ANY($1) ORDER BY nombre`, [ids])).rows;
+      if (e.code !== '42703') throw e; // columnas aún sin migrar
+      try {
+        sedes = (await db.query(`SELECT ${cols}, horas_anticipacion FROM entidad WHERE id = ANY($1) ORDER BY nombre`, [ids])).rows;
+      } catch (e2) {
+        if (e2.code !== '42703') throw e2;
+        sedes = (await db.query(`SELECT ${cols} FROM entidad WHERE id = ANY($1) ORDER BY nombre`, [ids])).rows;
+      }
     }
   }
   const actual = sedes.find(s => s.id === req.sede) || sedes[0] || null;
   res.json({ actual, sede_activa: req.sede, sedes, puede_todos: sedes.length > 1 });
 }));
+const ROLES_AUTORIZA = ['docente', 'jefe_panol', 'admin'];
+const normRolAutoriza = (v) => ROLES_AUTORIZA.includes(v) ? v : 'docente';
+
 app.post('/api/admin/sedes', auth, requireRole('admin'), wrap(async (req, res) => {
-  const { nombre, bodega_label, horas_anticipacion } = req.body || {};
+  const { nombre, bodega_label, horas_anticipacion,
+          permite_solicitud_especial, horas_anticipacion_excepcional, rol_autoriza_especial } = req.body || {};
   if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre de la sede es obligatorio' });
-  const ha = Number.isFinite(Number(horas_anticipacion)) ? Math.max(0, Math.round(Number(horas_anticipacion))) : 48;
+  const ha  = Number.isFinite(Number(horas_anticipacion)) ? Math.max(0, Math.round(Number(horas_anticipacion))) : 48;
+  const hae = Number.isFinite(Number(horas_anticipacion_excepcional)) ? Math.max(0, Math.round(Number(horas_anticipacion_excepcional))) : 0;
+  const pse = (permite_solicitud_especial === false) ? false : true;
+  const ra  = normRolAutoriza(rol_autoriza_especial);
   try {
     const r = (await db.query(
-      `INSERT INTO entidad (nombre, bodega_label, horas_anticipacion) VALUES ($1,$2,$3) RETURNING id`,
-      [nombre.trim(), (bodega_label && bodega_label.trim()) || 'Pañol', ha])).rows[0];
+      `INSERT INTO entidad (nombre, bodega_label, horas_anticipacion,
+         permite_solicitud_especial, horas_anticipacion_excepcional, rol_autoriza_especial)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [nombre.trim(), (bodega_label && bodega_label.trim()) || 'Pañol', ha, pse, hae, ra])).rows[0];
     res.status(201).json({ id: r.id });
   } catch (e) {
     if (e.code === '23505') return res.status(409).json({ error: 'Ya existe una sede con ese nombre' });
-    if (e.code === '42703') return res.status(409).json({ error: 'Falta correr la migración 13 (columna horas_anticipacion).' });
+    if (e.code === '42703') return res.status(409).json({ error: 'Falta correr las migraciones 13 y 15 (columnas de política por sede).' });
     throw e;
   }
 }));
 app.put('/api/admin/sedes/:id', auth, requireRole('admin'), wrap(async (req, res) => {
-  const { nombre, bodega_label, activo, horas_anticipacion } = req.body || {};
+  const { nombre, bodega_label, activo, horas_anticipacion,
+          permite_solicitud_especial, horas_anticipacion_excepcional, rol_autoriza_especial } = req.body || {};
   if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre de la sede es obligatorio' });
-  const ha = Number.isFinite(Number(horas_anticipacion)) ? Math.max(0, Math.round(Number(horas_anticipacion))) : null;
+  const ha  = Number.isFinite(Number(horas_anticipacion)) ? Math.max(0, Math.round(Number(horas_anticipacion))) : null;
+  const hae = Number.isFinite(Number(horas_anticipacion_excepcional)) ? Math.max(0, Math.round(Number(horas_anticipacion_excepcional))) : null;
+  const pse = (typeof permite_solicitud_especial === 'boolean') ? permite_solicitud_especial : null;
+  const ra  = ROLES_AUTORIZA.includes(rol_autoriza_especial) ? rol_autoriza_especial : null;
   try {
     const r = await db.query(
       `UPDATE entidad SET nombre=$2, bodega_label=$3, activo=COALESCE($4,activo),
-         horas_anticipacion=COALESCE($5,horas_anticipacion), updated_at=now() WHERE id=$1`,
-      [req.params.id, nombre.trim(), (bodega_label && bodega_label.trim()) || 'Pañol', typeof activo === 'boolean' ? activo : null, ha]);
+         horas_anticipacion=COALESCE($5,horas_anticipacion),
+         permite_solicitud_especial=COALESCE($6,permite_solicitud_especial),
+         horas_anticipacion_excepcional=COALESCE($7,horas_anticipacion_excepcional),
+         rol_autoriza_especial=COALESCE($8,rol_autoriza_especial),
+         updated_at=now() WHERE id=$1`,
+      [req.params.id, nombre.trim(), (bodega_label && bodega_label.trim()) || 'Pañol',
+       typeof activo === 'boolean' ? activo : null, ha, pse, hae, ra]);
     if (!r.rowCount) return res.status(404).json({ error: 'Sede no encontrada' });
     res.json({ ok: true });
   } catch (e) {
     if (e.code === '23505') return res.status(409).json({ error: 'Ya existe una sede con ese nombre' });
-    if (e.code === '42703') return res.status(409).json({ error: 'Falta correr la migración 13 (columna horas_anticipacion).' });
+    if (e.code === '42703') return res.status(409).json({ error: 'Falta correr las migraciones 13 y 15 (columnas de política por sede).' });
     throw e;
   }
 }));

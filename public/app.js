@@ -1621,21 +1621,42 @@ async function viewSedes() {
   const cargar = async () => {
     const s = await api('/sedes');
     const sedes = s.sedes || [];
-    $('#seList').innerHTML = sedes.map(x => `<div class="row"><div class="ava">🏫</div>
-      <div class="info"><b>${escD(x.nombre)}</b><small>Pañol: ${escD(x.bodega_label || 'Pañol')} · Reserva: ${x.horas_anticipacion != null ? x.horas_anticipacion : 48} h${x.activo === false ? ' · inactiva' : ''}${x.id === SEDE ? ' · <b>activa</b>' : ''}</small></div>
-      <button class="btn sm ghost" data-ed="${x.id}" data-n="${escD(x.nombre)}" data-b="${escD(x.bodega_label || '')}" data-a="${x.activo !== false}" data-h="${x.horas_anticipacion != null ? x.horas_anticipacion : 48}">Editar</button></div>`).join('');
-    $('#seList').querySelectorAll('[data-ed]').forEach(b => b.onclick = () => form(b.dataset.ed, b.dataset.n, b.dataset.b, b.dataset.a === 'true', b.dataset.h));
+    const rolTxt = { docente: 'Docente', jefe_panol: 'Jefe de pañol', admin: 'Admin' };
+    $('#seList').innerHTML = sedes.map(x => {
+      const pse = x.permite_solicitud_especial !== false;
+      const hae = x.horas_anticipacion_excepcional != null ? x.horas_anticipacion_excepcional : 0;
+      const ra = x.rol_autoriza_especial || 'docente';
+      const excep = pse ? `Excepción: ${hae > 0 ? hae + ' h mín' : 'sin límite'} · autoriza ${rolTxt[ra] || ra}` : 'Sin solicitudes excepcionales';
+      return `<div class="row"><div class="ava">🏫</div>
+      <div class="info"><b>${escD(x.nombre)}</b><small>Pañol: ${escD(x.bodega_label || 'Pañol')} · Reserva: ${x.horas_anticipacion != null ? x.horas_anticipacion : 48} h · ${excep}${x.activo === false ? ' · inactiva' : ''}${x.id === SEDE ? ' · <b>activa</b>' : ''}</small></div>
+      <button class="btn sm ghost" data-ed="${x.id}" data-n="${escD(x.nombre)}" data-b="${escD(x.bodega_label || '')}" data-a="${x.activo !== false}" data-h="${x.horas_anticipacion != null ? x.horas_anticipacion : 48}" data-pse="${pse}" data-hae="${hae}" data-ra="${ra}">Editar</button></div>`;
+    }).join('');
+    $('#seList').querySelectorAll('[data-ed]').forEach(b => b.onclick = () =>
+      form(b.dataset.ed, b.dataset.n, b.dataset.b, b.dataset.a === 'true', b.dataset.h, b.dataset.pse === 'true', b.dataset.hae, b.dataset.ra));
   };
-  function form(id, nombre, bodega, activo, horas) {
+  function form(id, nombre, bodega, activo, horas, pse, hae, ra) {
+    const permite = id ? (pse !== false) : true;
+    const rolSel = (r) => `<option value="docente"${(ra||'docente')==='docente'?' selected':''}>Docente</option><option value="jefe_panol"${ra==='jefe_panol'?' selected':''}>Jefe de pañol</option><option value="admin"${ra==='admin'?' selected':''}>Admin</option>`;
     openModal(`<h3>${id ? 'Editar' : 'Nueva'} sede</h3>
       <div class="field"><label>Nombre</label><input id="seN" value="${id ? escD(nombre) : ''}" placeholder="UST Santiago Centro"></div>
       <div class="field"><label>Cómo se llama el pañol/bodega</label><input id="seB" value="${id ? escD(bodega) : 'Pañol'}" placeholder="Pañol"></div>
       <div class="field"><label>Plazo de reserva (horas de anticipación)</label><input id="seH" type="number" min="0" value="${id ? (horas || 48) : 48}" placeholder="48"><small class="muted">Regla común: 48 h. Ajusta solo si esta sede necesita otro plazo.</small></div>
-      ${id ? `<div class="toggle"><input type="checkbox" id="seA" ${activo ? 'checked' : ''}><label for="seA" style="margin:0">Sede activa</label></div>` : ''}
+      <hr style="border:none;border-top:1px solid var(--line,#e5e7eb);margin:14px 0">
+      <p class="muted" style="margin:0 0 8px;font-weight:600">Solicitudes excepcionales (flujo especial)</p>
+      <div class="toggle"><input type="checkbox" id="sePSE" ${permite ? 'checked' : ''}><label for="sePSE" style="margin:0">Esta sede permite solicitudes excepcionales</label></div>
+      <div class="field"><label>Plazo mínimo excepcional (horas)</label><input id="seHAE" type="number" min="0" value="${id ? (hae || 0) : 0}" placeholder="0"><small class="muted">0 = sin límite de tiempo; la excepción queda sujeta a autorización y disponibilidad.</small></div>
+      <div class="field"><label>Quién autoriza las excepciones</label><select id="seRA">${rolSel(ra)}</select></div>
+      ${id ? `<hr style="border:none;border-top:1px solid var(--line,#e5e7eb);margin:14px 0"><div class="toggle"><input type="checkbox" id="seA" ${activo ? 'checked' : ''}><label for="seA" style="margin:0">Sede activa</label></div>` : ''}
       <div class="err" id="seErr"></div><button class="btn full" id="seOk">Guardar</button>`);
     $('#seOk').onclick = async () => {
       $('#seErr').textContent = '';
-      const body = { nombre: $('#seN').value.trim(), bodega_label: $('#seB').value.trim(), horas_anticipacion: Number($('#seH').value) };
+      const body = {
+        nombre: $('#seN').value.trim(), bodega_label: $('#seB').value.trim(),
+        horas_anticipacion: Number($('#seH').value),
+        permite_solicitud_especial: $('#sePSE').checked,
+        horas_anticipacion_excepcional: Number($('#seHAE').value),
+        rol_autoriza_especial: $('#seRA').value,
+      };
       if (id) body.activo = $('#seA').checked;
       try {
         await api('/admin/sedes' + (id ? '/' + id : ''), { method: id ? 'PUT' : 'POST', body });

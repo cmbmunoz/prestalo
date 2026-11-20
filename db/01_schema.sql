@@ -65,6 +65,9 @@ CREATE TABLE entidad (
     bodega_label  VARCHAR(60)  NOT NULL DEFAULT 'Pañol',     -- "Pañol" / "Bodega" / "Almacén"
     logo_url      TEXT,
     horas_anticipacion INTEGER NOT NULL DEFAULT 48,          -- plazo mínimo de reserva por sede (h)
+    permite_solicitud_especial     BOOLEAN     NOT NULL DEFAULT TRUE,  -- habilita el flujo excepcional en la sede
+    horas_anticipacion_excepcional INTEGER     NOT NULL DEFAULT 0,     -- plazo mínimo de una excepción (0 = sin límite)
+    rol_autoriza_especial          VARCHAR(20) NOT NULL DEFAULT 'docente', -- docente | jefe_panol | admin
     activo        BOOLEAN      NOT NULL DEFAULT TRUE,
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -342,6 +345,7 @@ CREATE TABLE solicitud_especial (
     usuario_rut   VARCHAR(12) NOT NULL REFERENCES usuario(rut)  ON DELETE CASCADE,
     asignatura_id INTEGER          REFERENCES asignatura(id)    ON DELETE SET NULL,
     docente_rut   VARCHAR(12)      REFERENCES usuario(rut)      ON DELETE SET NULL, -- quien responde
+    entidad_id    INTEGER          REFERENCES entidad(id),             -- sede de la solicitud (del solicitante)
     descripcion   TEXT NOT NULL,
     estado        estado_solicitud NOT NULL DEFAULT 'pendiente',
     respuesta     TEXT,
@@ -349,6 +353,7 @@ CREATE TABLE solicitud_especial (
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX ix_solicitud_usuario ON solicitud_especial(usuario_rut);
+CREATE INDEX ix_solicitud_entidad ON solicitud_especial(entidad_id);
 
 -- ---------------------------------------------------------------------
 -- 13. Consulta por WhatsApp (chatbot RF-61)
