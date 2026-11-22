@@ -1112,7 +1112,14 @@ async function tareaDetalle(id) {
     // RF-11: el alumno ve un RESUMEN del equipamiento (categorías) y reserva una CATEGORÍA.
     // La unidad física la individualiza el pañol al entregar.
     const items = cats.length
-      ? cats.map(c=>`<div class="row" style="margin-bottom:6px"><div class="ava">${icon(c.nombre)}</div><div class="info"><b>${escD(c.nombre)}</b><small>${c.disponibles} unidad(es) disponible(s)</small></div><button class="btn sm rsvcat" data-cid="${c.id}" data-cnom="${escD(c.nombre)}" ${c.disponibles<1?'disabled':''}>Reservar</button></div>`).join('')
+      ? cats.map(c=>{
+          const ya = c.ya_reservada;
+          const sinStock = c.disponibles < 1;
+          const btn = ya
+            ? `<button class="btn sm ghost" disabled>Reservado ✓</button>`
+            : `<button class="btn sm rsvcat" data-cid="${c.id}" data-cnom="${escD(c.nombre)}" ${sinStock?'disabled title="Sin unidades disponibles"':''}>Reservar</button>`;
+          return `<div class="row" style="margin-bottom:6px"><div class="ava">${icon(c.nombre)}</div><div class="info"><b>${escD(c.nombre)}</b><small>${ya?'Ya reservaste esta categoría':c.disponibles+' unidad(es) disponible(s)'}</small></div>${btn}</div>`;
+        }).join('')
       : '<p class="muted">Sin categorías habilitadas.</p>';
     bodyEquipos = `<h3 style="font-size:15px;margin:12px 0 8px">Equipamiento solicitado para la tarea</h3>
       <p class="muted" style="font-size:11.5px;margin:-4px 0 8px">Reservas por categoría; el pañol asigna la unidad al entregar. Las fechas coinciden con las de la tarea.</p>
@@ -1156,7 +1163,7 @@ function reservarCategoriaForm(tareaId, catId, catNom, t) {
     const integrantes = grupal
       ? [...document.querySelectorAll('#tInts .integrantes-row')].map(r=>({ nombre:r.querySelector('.i-nom').value.trim(), rut:r.querySelector('.i-rut').value.trim() })).filter(x=>x.rut)
       : [];
-    try { await api(`/tareas/${tareaId}/reservar`,{method:'POST',body:{categoria_id:Number(catId), integrantes}}); closeModal(); toast('Reserva de categoría confirmada'); }
+    try { await api(`/tareas/${tareaId}/reservar`,{method:'POST',body:{categoria_id:Number(catId), integrantes}}); closeModal(); toast('Reserva de categoría confirmada'); tareaDetalle(tareaId); }
     catch(e){ $('#rE').textContent=e.message||'Error'; }
   };
 }

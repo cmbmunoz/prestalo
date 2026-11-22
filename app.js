@@ -1359,9 +1359,11 @@ app.get('/api/tareas/:id', auth, wrap(async (req, res) => {
                 (SELECT count(*)::int FROM equipo e WHERE e.categoria_id=c.id AND e.entidad_id=$2 AND e.estado='disponible')
                 - COALESCE((SELECT count(*)::int FROM reserva r JOIN usuario u ON u.rut=r.usuario_rut
                             WHERE r.categoria_id=c.id AND r.equipo_id IS NULL AND r.estado='confirmada' AND u.entidad_id=$2), 0)
-              ) AS disponibles
+              ) AS disponibles,
+              EXISTS (SELECT 1 FROM reserva r WHERE r.tarea_id=$1 AND r.categoria_id=c.id
+                        AND r.usuario_rut=$3 AND r.estado IN ('pendiente','confirmada','en_uso')) AS ya_reservada
        FROM tarea_categoria tc JOIN categoria c ON c.id=tc.categoria_id
-       WHERE tc.tarea_id=$1 ORDER BY c.nombre`, [req.params.id, req.sede])).rows;
+       WHERE tc.tarea_id=$1 ORDER BY c.nombre`, [req.params.id, req.sede, req.user.rut])).rows;
   } catch (e) {
     if (e.code === '42P01') { /* migración 16 sin aplicar */ }
     else if (e.code === '42703') { // migración 17 sin aplicar → sin descuento por reservas de categoría
