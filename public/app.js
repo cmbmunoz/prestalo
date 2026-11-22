@@ -149,7 +149,7 @@ $('#btnLogout').onclick = () => { TOKEN = null; localStorage.removeItem('prestal
 
 // ---------- Menú por perfil ----------
 const MENUS = {
-  alumno:   [['catalogo','📚','Reserva y Catálogo'],['kits','🎒','Kits'],['asignaturas','🎓','Mis asignaturas'],['reservas','📅','Mis reservas'],['disponibilidad','🗓️','Disponibilidad'],['solicitudes','🙋','Solicitudes especiales'],['anuncios','📢','Anuncios'],['manuales','❓','Ayuda'],['perfil','👤','Mi perfil']],
+  alumno:   [['catalogo','📚','Catálogo'],['kits','🎒','Kits'],['asignaturas','🎓','Mis asignaturas'],['reservas','📅','Mis reservas'],['disponibilidad','🗓️','Disponibilidad'],['solicitudes','🙋','Solicitudes especiales'],['anuncios','📢','Anuncios'],['manuales','❓','Ayuda'],['perfil','👤','Mi perfil']],
   // Nota: "Compañeros" del alumno ahora vive dentro de cada asignatura (ver Mis asignaturas).
   docente:  [['tareas','📝','Tareas'],['solicitudes','🙋','Solicitudes especiales'],['grupos','👪','Grupos'],['kits','🎒','Kits'],['catalogo','📚','Catálogo'],['asignaturas','🎓','Mis asignaturas'],['reservas','📅','Mis reservas'],['disponibilidad','🗓️','Disponibilidad'],['companeros','🧑‍🤝‍🧑','Alumnos'],['anuncios','📢','Anuncios'],['manuales','❓','Ayuda'],['perfil','👤','Mi perfil']],
   panolero: [['agenda','📋','Agenda / Entregas'],['recibir','📥','Recibir'],['pedidos','🧾','Pedidos'],['importar','📦','Importar inventario'],['disponibilidad','🗓️','Disponibilidad'],['bloqueos','🚫','Bloqueos'],['anuncios','📢','Anuncios'],['manuales','❓','Ayuda'],['perfil','👤','Mi perfil']],
@@ -271,40 +271,31 @@ async function render(key) {
 
 // ----- Catálogo (alumno/docente) -----
 async function viewCatalogo() {
-  h(`<h2 class="page">Reserva y Catálogo</h2><p class="muted">Solo se muestran los equipos habilitados para tus asignaturas. La cantidad disponible baja al reservar.</p><div class="grid" id="cat"></div>`);
-  const [eq, resumen] = await Promise.all([ api('/equipos'), api('/inventario/resumen').catch(() => []) ]);
-  if (!eq.length) { $('#cat').innerHTML = '<p class="muted">No hay equipos habilitados para tu asignatura.</p>'; return; }
-  const dispMap = {};
-  resumen.forEach(r => { dispMap[r.categoria + '|' + r.articulo] = r; }); // disponibles/total por artículo en la sede
-  // Agrupar por artículo (categoría + equipo): una sola tarjeta por modelo, con su resumen.
-  const grupos = {};
-  eq.forEach(e => {
-    const key = e.categoria + '|' + e.nombre;
-    if (!grupos[key]) grupos[key] = { rep: e, unidades: [], dispUnidad: null };
-    grupos[key].unidades.push(e);
-    if (e.estado === 'disponible' && !grupos[key].dispUnidad) grupos[key].dispUnidad = e;
-  });
-  $('#cat').innerHTML = Object.keys(grupos).map(key => {
-    const g = grupos[key]; const e = g.rep;
-    const rec = e.tipo === 'recinto' ? '<span class="pill warn">Requiere autorización</span>' : '';
-    const inf = dispMap[key];
-    const disp = inf ? inf.disponible : g.unidades.filter(u => u.estado === 'disponible').length;
-    const tot = inf ? inf.total : g.unidades.length;
-    const [lab, cls] = disp > 0 ? ['Disponible', 'ok'] : ['Sin disponibilidad', 'bad'];
-    const dispPill = `<span class="pill ${disp > 0 ? 'ok' : 'bad'}" title="Unidades disponibles de este artículo">Disponibles: ${disp}/${tot}</span>`;
-    const target = g.dispUnidad ? g.dispUnidad.id : '';
-    return `<div class="card">
-      <div class="thumb">${icon(e.categoria)}</div>
-      <h3>${e.nombre}</h3><div class="cat">${e.categoria}${e.marca ? ' · ' + e.marca : ''}</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${dispPill}<span class="pill ${cls}">${lab}</span>${rec}</div>
-      <div style="display:flex;gap:6px">
-        <button class="btn sm" style="flex:1" ${disp > 0 ? `data-id="${target}"` : 'disabled style="opacity:.5;flex:1"'}>Reservar</button>
-        <button class="btn sm ghost" data-ficha="${e.id}">Ficha</button>
-      </div>
-    </div>`;
-  }).join('');
-  $('#cat').querySelectorAll('button[data-id]').forEach(b => b.onclick = () => modalReserva(b.dataset.id));
-  $('#cat').querySelectorAll('button[data-ficha]').forEach(b => b.onclick = () => fichaEquipo(b.dataset.ficha));
+  const asigs = ME.asignaturas || [];
+  h(`<h2 class="page">Catálogo</h2><p class="muted">Disponibilidad y ficha del equipamiento habilitado para tus asignaturas.</p><div id="catWrap">Cargando…</div>`);
+  if (!asigs.length) { $('#catWrap').innerHTML = '<p class="muted">No tienes asignaturas con equipamiento habilitado.</p>'; return; }
+  const secciones = [];
+  for (const a of asigs) {
+    let eq = [];
+    try { eq = await api('/asignaturas/' + a.id + '/equipos'); } catch (e) { eq = []; }
+    // Agrupar por artículo (categoría + nombre): una tarjeta por modelo, con su disponibilidad.
+    const grupos = {};
+    eq.forEach(e => { const k = e.categoria + '|' + e.nombre; (grupos[k] = grupos[k] || { rep: e, unidades: [] }).unidades.push(e); });
+    const cards = Object.keys(grupos).map(k => {
+      const g = grupos[k], e = g.rep;
+      const disp = g.unidades.filter(u => u.estado === 'disponible').length, tot = g.unidades.length;
+      return `<div class="card">
+        <div class="thumb">${icon(e.categoria)}</div>
+        <h3>${escD(e.nombre)}</h3><div class="cat">${escD(e.categoria)}${e.marca ? ' · ' + escD(e.marca) : ''}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"><span class="pill ${disp > 0 ? 'ok' : 'bad'}" title="Unidades disponibles">Disponibles: ${disp}/${tot}</span></div>
+        <div><button class="btn sm ghost" style="width:100%" data-ficha="${e.id}">Ficha</button></div>
+      </div>`;
+    }).join('');
+    secciones.push(`<h3 style="margin:18px 0 8px;font-size:15px">${escD(a.nombre)}${a.seccion ? ' · ' + escD(a.seccion) : ''}</h3>
+      <div class="grid">${cards || '<p class="muted" style="margin:0">Sin equipamiento habilitado para esta asignatura.</p>'}</div>`);
+  }
+  $('#catWrap').innerHTML = secciones.join('');
+  $('#catWrap').querySelectorAll('button[data-ficha]').forEach(b => b.onclick = () => fichaEquipo(b.dataset.ficha));
 }
 
 async function modalReserva(id) {
@@ -1782,11 +1773,17 @@ async function fichaEquipo(id) {
     const e = await api('/equipos/' + id);
     const [lab, cls] = ESTADO_EQ[e.estado] || [e.estado, 'info'];
     const row = (k, v) => v ? `<tr><td class="k" style="color:var(--muted);width:40%">${k}</td><td>${escD(v)}</td></tr>` : '';
+    // Alumno/docente: ficha de consulta (sin QR, N° de serie ni condición), con foto de referencia.
+    const esConsulta = ME.user.rol === 'alumno' || ME.user.rol === 'docente';
+    const foto = e.foto_referencia
+      ? `<img src="${escD(e.foto_referencia)}" alt="Foto de referencia" style="width:100%;max-height:220px;object-fit:contain;border-radius:10px;background:#f4f6f5;margin:4px 0 12px">`
+      : `<div style="width:100%;height:130px;display:flex;align-items:center;justify-content:center;background:#f4f6f5;border-radius:10px;font-size:46px;margin:4px 0 12px">${icon(e.categoria)}</div>`;
     let html = `<h3>${escD(e.nombre)}</h3>
       <p style="margin:2px 0 10px"><span class="pill ${cls}">${lab}</span>${e.requiere_autorizacion ? ' <span class="pill warn">Requiere autorización</span>' : ''}</p>
+      ${foto}
       <table style="box-shadow:none"><tbody>
-        ${row('Código QR', e.codigo_qr)}${row('Categoría', e.categoria)}${row('Marca', e.marca)}${row('Modelo', e.modelo)}
-        ${row('N° de serie', e.n_serie)}${row('Tipo', e.tipo)}${row('Condición', e.condicion)}
+        ${row('Categoría', e.categoria)}${row('Marca', e.marca)}${row('Modelo', e.modelo)}${row('Tipo', e.tipo)}
+        ${esConsulta ? '' : row('Código QR', e.codigo_qr) + row('N° de serie', e.n_serie) + row('Condición', e.condicion)}
         ${row('Laboratorio', e.laboratorio)}${row('Accesorios', e.accesorios)}
       </tbody></table>`;
     if (ME.user.rol === 'admin' || ME.user.rol === 'panolero') {
