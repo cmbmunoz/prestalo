@@ -1144,17 +1144,22 @@ app.put('/api/admin/asignaturas/:id/elegibilidad', auth, requireRole('admin'), w
 // + modelo + marca) con cantidad. Al reservarlo, el sistema asigna unidades
 // disponibles de cada modelo en la sede activa.
 
-// Modelos disponibles en la sede, para armar kits (agrupa unidades equivalentes)
+// Modelos disponibles en la sede, para armar kits (agrupa unidades equivalentes).
+// Con ?asignatura_id=X se limita a las categorías permitidas (elegibilidad) de la asignatura.
 app.get('/api/modelos', auth, requireRole('docente', 'jefe_panol', 'admin'), wrap(async (req, res) => {
+  const aid = req.query.asignatura_id ? Number(req.query.asignatura_id) : null;
+  const params = [req.sede];
+  let filtro = '';
+  if (aid) { params.push(aid); filtro = `AND e.categoria_id IN (SELECT categoria_id FROM elegibilidad WHERE asignatura_id=$2)`; }
   const { rows } = await db.query(
     `SELECT e.categoria_id, c.nombre AS categoria, e.nombre, COALESCE(e.modelo,'') AS modelo,
             COALESCE(e.marca,'') AS marca,
             COUNT(*) FILTER (WHERE e.estado='disponible')::int AS disponibles,
             COUNT(*)::int AS total
      FROM equipo e JOIN categoria c ON c.id=e.categoria_id
-     WHERE e.entidad_id=$1 AND e.tipo='equipo'
+     WHERE e.entidad_id=$1 AND e.tipo='equipo' ${filtro}
      GROUP BY e.categoria_id, c.nombre, e.nombre, COALESCE(e.modelo,''), COALESCE(e.marca,'')
-     ORDER BY c.nombre, e.nombre`, [req.sede]);
+     ORDER BY c.nombre, e.nombre`, params);
   res.json(rows);
 }));
 

@@ -2001,18 +2001,17 @@ async function modalKitNuevo(kit) {
     else { const ac = await api('/academico'); asigs = (ac.carreras||ac||[]).flatMap(c => (c.asignaturas||[]).map(a => ({id:a.id, nombre:a.nombre, seccion:a.seccion, carrera:c.nombre}))); }
   } catch(e){}
   let modelos = [];
-  try { modelos = await api('/modelos'); } catch(e){}
   let lineas = kit ? (await api(`/kits/${kit.id}`)).items.map(it => ({categoria_id:it.categoria_id, nombre:it.nombre, modelo:it.modelo, marca:it.marca, categoria:it.categoria, cantidad:it.cantidad})) : [];
   const optA = asigs.map(a => `<option value="${a.id}" ${kit&&kit.asignatura_id===a.id?'selected':''}>${escD(a.nombre)}${a.seccion?' ('+escD(a.seccion)+')':''}</option>`).join('');
-  const optM = modelos.map((m,i) => `<option value="${i}">${escD(m.categoria)} · ${escD(m.nombre)}${m.marca?' · '+escD(m.marca):''} (disp ${m.disponibles})</option>`).join('');
   openModal(`<h3>${kit?'Editar kit':'Definir un kit de equipos'}</h3>
     <div class="field"><label>Nombre del kit</label><input id="knNom" value="${kit?escD(kit.nombre):''}" placeholder="Kit Reportería"></div>
     <div class="field"><label>Asociado a la asignatura</label><select id="knAsig" ${kit?'disabled':''}>${optA||'<option value="">— sin asignaturas —</option>'}</select></div>
     <hr style="border:none;border-top:1px solid #e3eae7;margin:12px 0">
-    <label style="font-weight:700;font-size:13px">Agregar equipos (por modelo)</label>
+    <label style="font-weight:700;font-size:13px">Agregar equipamiento</label>
+    <p class="muted" style="font-size:11.5px;margin:2px 0 6px">Solo el equipamiento permitido para la asignatura, con sus unidades disponibles. Indica la cantidad a reservar.</p>
     <div style="display:flex;gap:6px;margin:6px 0;flex-wrap:wrap">
-      <select id="knMod" style="flex:1;min-width:0">${optM||'<option value="">— sin modelos —</option>'}</select>
-      <input id="knCant" type="number" min="1" value="1" style="width:56px;flex:0 0 auto">
+      <select id="knMod" style="flex:1;min-width:0"><option value="">Cargando…</option></select>
+      <input id="knCant" type="number" min="1" value="1" style="width:56px;flex:0 0 auto" title="Cantidad a reservar">
       <button class="btn sm" id="knAdd" type="button" style="flex:0 0 auto">Agregar</button></div>
     <div id="knList"></div>
     <div class="err" id="knErr"></div>
@@ -2021,14 +2020,38 @@ async function modalKitNuevo(kit) {
     $('#knList').innerHTML = lineas.length ? lineas.map((l,i) => `<div class="row" style="padding:6px 8px">
       <div class="info"><b>${escD(l.nombre)}</b><small>${escD(l.categoria||'')}${l.marca?' · '+escD(l.marca):''} · x${l.cantidad}</small></div>
       <button class="btn sm ghost" data-rm="${i}" type="button">Quitar</button></div>`).join('')
-      : '<p class="muted" style="margin:4px 0">Aún no agregas equipos al kit.</p>';
+      : '<p class="muted" style="margin:4px 0">Aún no agregas equipamiento al kit.</p>';
     $('#knList').querySelectorAll('button[data-rm]').forEach(b => b.onclick = () => { lineas.splice(Number(b.dataset.rm),1); pintar(); });
   };
   pintar();
+  const setMax = () => {
+    const m = modelos[Number($('#knMod').value)];
+    const max = m ? Math.max(1, m.disponibles) : 1;
+    $('#knCant').max = max;
+    if (Number($('#knCant').value) > max) $('#knCant').value = max;
+  };
+  const refreshMod = () => {
+    $('#knMod').innerHTML = modelos.length
+      ? modelos.map((m,i) => `<option value="${i}">${escD(m.categoria)} · ${escD(m.nombre)}${m.marca?' · '+escD(m.marca):''} — ${m.disponibles} disp.</option>`).join('')
+      : '<option value="">— sin equipamiento habilitado para la asignatura —</option>';
+    setMax();
+  };
+  const loadModelos = async (aid) => {
+    $('#knMod').innerHTML = '<option value="">Cargando…</option>';
+    try { modelos = aid ? await api('/modelos?asignatura_id=' + aid) : []; } catch(e){ modelos = []; }
+    refreshMod();
+  };
+  $('#knMod').onchange = setMax;
+  $('#knAsig').onchange = () => { lineas = []; pintar(); loadModelos(Number($('#knAsig').value)); };
+  await loadModelos(kit ? kit.asignatura_id : Number($('#knAsig').value || 0));
   $('#knAdd').onclick = () => {
-    const mi = Number($('#knMod').value); if (isNaN(mi) || !modelos[mi]) return;
+    const mi = Number($('#knMod').value); if (isNaN(mi) || !modelos[mi]) return $('#knErr').textContent = 'Selecciona un equipo del listado.';
     const m = modelos[mi]; const cant = Math.max(1, Number($('#knCant').value)||1);
-    lineas.push({categoria_id:m.categoria_id, nombre:m.nombre, modelo:m.modelo, marca:m.marca, categoria:m.categoria, cantidad:cant});
+    if (cant > m.disponibles) { $('#knErr').textContent = `Solo hay ${m.disponibles} unidad(es) disponible(s) de ${m.nombre}.`; return; }
+    $('#knErr').textContent = '';
+    const ex = lineas.find(l => l.nombre===m.nombre && l.categoria_id===m.categoria_id && (l.marca||'')===(m.marca||''));
+    if (ex) ex.cantidad = Math.min(m.disponibles, ex.cantidad + cant);
+    else lineas.push({categoria_id:m.categoria_id, nombre:m.nombre, modelo:m.modelo, marca:m.marca, categoria:m.categoria, cantidad:cant});
     pintar();
   };
   $('#knOk').onclick = async () => {
