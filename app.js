@@ -15,7 +15,7 @@ const mailer = require('./mailer');
 const asistente = require('./asistente');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '6mb' })); // permite foto de referencia (data URI) en la ficha
 app.use(express.static(path.join(__dirname, 'public')));
 
 const ANTICIPACION_RECINTO_H = 72;   // RF-53 (recintos, con autorización)
@@ -279,6 +279,21 @@ app.get('/api/equipos/:id', auth, wrap(async (req, res) => {
      WHERE e.id=$1 AND e.entidad_id=$2`, [req.params.id, req.sede]);
   if (!rows.length) return res.status(404).json({ error: 'Equipo no encontrado' });
   res.json(rows[0]);
+}));
+
+// Foto de referencia del equipo (pañolero/jefe de pañol/admin). Acepta data URI o URL; null la quita.
+app.put('/api/equipos/:id/foto', auth, requireRole('panolero', 'jefe_panol', 'admin'), wrap(async (req, res) => {
+  let { foto } = req.body || {};
+  if (foto === undefined) foto = null;
+  if (foto !== null) {
+    if (typeof foto !== 'string') return res.status(400).json({ error: 'Formato de imagen no válido' });
+    if (foto.length > 5_500_000) return res.status(413).json({ error: 'La imagen es demasiado grande. Usa una más liviana.' });
+    if (!/^data:image\/(png|jpe?g|webp);base64,/.test(foto) && !/^https?:\/\//.test(foto))
+      return res.status(400).json({ error: 'Formato de imagen no válido' });
+  }
+  const r = await db.query(`UPDATE equipo SET foto_referencia=$2 WHERE id=$1 AND entidad_id=$3`, [req.params.id, foto, req.sede]);
+  if (!r.rowCount) return res.status(404).json({ error: 'Equipo no encontrado' });
+  res.json({ ok: true });
 }));
 
 // ----------------------- Reservas (validaciones normativa) -----------------------

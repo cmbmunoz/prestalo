@@ -681,7 +681,7 @@ async function viewInventario() {
     $('#tbl').innerHTML = `<table><thead><tr><th>Equipo</th><th>Categoría</th>${todos ? '<th>Sede</th>' : ''}<th>N° serie</th><th>Estado</th><th>Acción</th></tr></thead><tbody>${
       eq.map(e => {
         const [lab, cls] = ESTADO_EQ[e.estado] || [e.estado, 'info'];
-        return `<tr><td><b>${escD(e.nombre)}</b><br><small class="muted">${escD(e.codigo_qr)}</small></td><td>${escD(e.categoria)}</td>${todos ? `<td>${escD(e.sede || '')}</td>` : ''}
+        return `<tr><td><b>${escD(e.nombre)}</b><br><small class="muted">${escD(e.codigo_qr)}</small> · <button class="btn sm ghost" data-ficha="${e.id}" style="padding:1px 8px">Ficha</button></td><td>${escD(e.categoria)}</td>${todos ? `<td>${escD(e.sede || '')}</td>` : ''}
           <td>${escD(e.n_serie || '—')}</td><td><span class="pill ${cls}">${lab}</span></td>
           <td><select data-id="${e.id}" class="estSel">
             <option ${e.estado === 'disponible' ? 'selected' : ''} value="disponible">Disponible</option>
@@ -693,6 +693,7 @@ async function viewInventario() {
       try { await api(`/admin/equipos/${s.dataset.id}/estado`, { method: 'POST', body: { estado: s.value } }); toast('Estado actualizado'); }
       catch (e) { toast(e.message); }
     });
+    $('#tbl').querySelectorAll('button[data-ficha]').forEach(b => b.onclick = () => fichaEquipo(b.dataset.ficha));
   }
   if ($('#invSede')) $('#invSede').onchange = cargar;
   $('#addEq').onclick = modalNuevoEquipo;
@@ -1767,6 +1768,24 @@ function viewManuales() {
 }
 
 // ===================== Ficha completa del equipo =====================
+// Redimensiona/comprime una imagen en el navegador a un data URI JPEG liviano.
+function resizeImage(file, maxDim, quality) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let w = img.width, hh = img.height;
+      if (w > maxDim || hh > maxDim) { const s = Math.min(maxDim / w, maxDim / hh); w = Math.round(w * s); hh = Math.round(hh * s); }
+      const c = document.createElement('canvas'); c.width = w; c.height = hh;
+      c.getContext('2d').drawImage(img, 0, 0, w, hh);
+      try { resolve(c.toDataURL('image/jpeg', quality)); } catch (e) { reject(new Error('No se pudo procesar la imagen')); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('No se pudo leer la imagen')); };
+    img.src = url;
+  });
+}
+
 async function fichaEquipo(id) {
   openModal('<h3>Ficha del equipo</h3><p class="muted">Cargando…</p>');
   try {
@@ -1786,11 +1805,37 @@ async function fichaEquipo(id) {
         ${esConsulta ? '' : row('Código QR', e.codigo_qr) + row('N° de serie', e.n_serie) + row('Condición', e.condicion)}
         ${row('Laboratorio', e.laboratorio)}${row('Accesorios', e.accesorios)}
       </tbody></table>`;
+    // Gestión de foto de referencia (roles operativos).
+    const puedeFoto = ['panolero', 'jefe_panol', 'admin'].includes(ME.user.rol);
+    if (puedeFoto) {
+      html += `<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <label class="btn sm ghost" style="cursor:pointer;margin:0">📷 ${e.foto_referencia ? 'Cambiar' : 'Agregar'} foto
+          <input id="fFoto" type="file" accept="image/*" style="display:none"></label>
+        ${e.foto_referencia ? '<button class="btn sm ghost danger" id="fFotoDel" type="button">Quitar foto</button>' : ''}
+        <span class="err" id="fFotoE" style="flex-basis:100%"></span></div>`;
+    }
     if (ME.user.rol === 'admin' || ME.user.rol === 'panolero') {
       html += '<div id="fHist" class="muted" style="margin-top:12px">Cargando historial…</div>';
     }
     $('#modalRoot .modal').innerHTML = `<button class="close">×</button>${html}`;
     $('#modalRoot .close').onclick = closeModal;
+    if (puedeFoto) {
+      const fin = $('#fFoto');
+      if (fin) fin.onchange = async () => {
+        const file = fin.files && fin.files[0]; if (!file) return;
+        $('#fFotoE').textContent = 'Procesando imagen…';
+        try {
+          const dataUrl = await resizeImage(file, 1000, 0.72);
+          await api('/equipos/' + id + '/foto', { method: 'PUT', body: { foto: dataUrl } });
+          toast('Foto actualizada'); fichaEquipo(id);
+        } catch (err) { $('#fFotoE').textContent = err.message || 'Error al subir la foto'; }
+      };
+      const del = $('#fFotoDel');
+      if (del) del.onclick = async () => {
+        try { await api('/equipos/' + id + '/foto', { method: 'PUT', body: { foto: null } }); toast('Foto quitada'); fichaEquipo(id); }
+        catch (err) { toast(err.message || 'Error'); }
+      };
+    }
     if (ME.user.rol === 'admin' || ME.user.rol === 'panolero') {
       const hist = await api('/equipos/' + id + '/historial');
       const pr = hist.prestamos.length
