@@ -396,7 +396,7 @@ async function viewAgenda() {
   const ag = await api('/agenda');
   if (!ag.length) { $('#list').innerHTML = '<p class="muted">Sin entregas pendientes.</p>'; return; }
   $('#list').innerHTML = ag.map((a, i) => `<div class="row"><div class="ava">${icon(a.categoria)}</div>
-    <div class="info"><b>${escD(a.equipo)}</b><small>${unidadLinea(a)}<br>${escD(a.usuario)} · ${fmtDate(a.fecha_inicio)}</small></div>
+    <div class="info"><b>${escD(a.por_individualizar ? a.categoria : a.equipo)}</b><small>${a.por_individualizar ? `Reserva por categoría · ${(a.unidades?a.unidades.length:0)} unidad(es) disponible(s)` : unidadLinea(a)}<br>${escD(a.usuario)} · ${fmtDate(a.fecha_inicio)}</small></div>
     <div style="display:flex;gap:6px">
       <button class="btn sm ghost" data-r="${i}">Reprogramar</button>
       <button class="btn sm" data-i="${i}">Entregar</button></div></div>`).join('');
@@ -426,17 +426,29 @@ function modalReprogramar(a){
   };
 }
 function modalEntregar(a) {
+  const ind = !!a.por_individualizar;         // RF-11: reserva por categoría → asignar unidad
+  const unidades = a.unidades || [];
   openModal(`<h3>Entregar equipo</h3>
-    <div class="aviso ok" style="margin-bottom:10px">Entregando: <b>${escD(a.equipo)}</b><br>${unidadLinea(a)}</div>
-    <p class="muted" style="margin-top:0">Escanea o ingresa el código del equipo para verificar la unidad.</p>
-    <div class="field"><label>QR / código del equipo</label><input id="eQr" placeholder="${escD(a.codigo_qr)}"></div>
+    <div class="aviso ok" style="margin-bottom:10px">Entregando: <b>${escD(ind ? a.categoria : a.equipo)}</b>${ind ? '<br>Reserva por categoría — selecciona la unidad física a entregar' : '<br>'+unidadLinea(a)}</div>
+    ${ind
+      ? `<div class="field"><label>Unidad a entregar (individualización)</label><select id="eUnit">${unidades.length ? unidades.map(u=>`<option value="${u.id}">${escD(u.nombre)} · ${escD(u.codigo_qr)}</option>`).join('') : '<option value="">No hay unidades disponibles</option>'}</select></div>`
+      : `<p class="muted" style="margin-top:0">Escanea o ingresa el código del equipo para verificar la unidad.</p>
+         <div class="field"><label>QR / código del equipo</label><input id="eQr" placeholder="${escD(a.codigo_qr||'')}"></div>`}
     <div class="field"><label>Condición de salida</label><select id="eCond">
       <option value="optimo">Óptimo</option><option value="bueno" selected>Buen estado</option></select></div>
     <div class="err" id="eErr"></div>
     <button class="btn full" id="eOk">Confirmar entrega</button>`);
   $('#eOk').onclick = async () => {
     try {
-      await api('/entregar', { method: 'POST', body: { reserva_id: Number(a.id), qr: $('#eQr').value.trim() || null, condicion_salida: $('#eCond').value } });
+      const body = { reserva_id: Number(a.id), condicion_salida: $('#eCond').value };
+      if (ind) {
+        const u = $('#eUnit') ? Number($('#eUnit').value) : 0;
+        if (!u) { $('#eErr').textContent = 'No hay unidad disponible para asignar'; return; }
+        body.equipo_id = u;
+      } else {
+        body.qr = $('#eQr').value.trim() || null;
+      }
+      await api('/entregar', { method: 'POST', body });
       closeModal(); toast('Entrega registrada'); viewAgenda();
     } catch (e) { $('#eErr').textContent = e.message; }
   };
@@ -1097,16 +1109,14 @@ async function tareaDetalle(id) {
   if (docente) {
     bodyEquipos = `<h3 style="font-size:15px;margin:12px 0 8px">Categorías habilitadas</h3><div>${catsHtml}</div>`;
   } else {
-    const disp = d.equipos || [];
-    const porCat = {};
-    disp.forEach(e => { const k = e.categoria || '—'; (porCat[k] = porCat[k] || []).push(e); });
-    const grupos = Object.keys(porCat).map(cat => {
-      const items = porCat[cat].map(e=>`<div class="row" style="margin-bottom:6px"><div class="ava">${icon(cat)}</div><div class="info"><b>${escD(e.nombre)}</b><small>${(ESTADO_EQ[e.estado]||[e.estado])[0]}</small></div><button class="btn sm rsv" data-eid="${e.id}" data-enom="${escD(e.nombre)}" ${e.estado!=='disponible'?'disabled':''}>Reservar</button></div>`).join('');
-      return `<div style="margin-bottom:8px"><div class="muted" style="font-size:12px;font-weight:600;margin:6px 0 4px">${escD(cat)}</div>${items}</div>`;
-    }).join('');
-    bodyEquipos = `<h3 style="font-size:15px;margin:12px 0 8px">Equipos disponibles para la tarea</h3>
-      <p class="muted" style="font-size:11.5px;margin:-4px 0 8px">Las fechas de la reserva coinciden con las de la tarea.</p>
-      <div id="teq">${grupos || '<p class="muted">No hay unidades disponibles en las categorías de la tarea.</p>'}</div>`;
+    // RF-11: el alumno ve un RESUMEN del equipamiento (categorías) y reserva una CATEGORÍA.
+    // La unidad física la individualiza el pañol al entregar.
+    const items = cats.length
+      ? cats.map(c=>`<div class="row" style="margin-bottom:6px"><div class="ava">${icon(c.nombre)}</div><div class="info"><b>${escD(c.nombre)}</b><small>${c.disponibles} unidad(es) disponible(s)</small></div><button class="btn sm rsvcat" data-cid="${c.id}" data-cnom="${escD(c.nombre)}" ${c.disponibles<1?'disabled':''}>Reservar</button></div>`).join('')
+      : '<p class="muted">Sin categorías habilitadas.</p>';
+    bodyEquipos = `<h3 style="font-size:15px;margin:12px 0 8px">Equipamiento solicitado para la tarea</h3>
+      <p class="muted" style="font-size:11.5px;margin:-4px 0 8px">Reservas por categoría; el pañol asigna la unidad al entregar. Las fechas coinciden con las de la tarea.</p>
+      <div id="tcats">${items}</div>`;
   }
   const resHtml = docente ? (d.reservas.length ? `<h3 style="font-size:15px;margin:14px 0 8px">Reservas de alumnos</h3>`+d.reservas.map(r=>`<div class="row" style="margin-bottom:6px"><div class="info"><b>${escD(r.alumno)}</b><small>${escD(r.equipo)} · ${fmtDate(r.fecha_inicio)} → ${fmtDate(r.fecha_fin)}</small></div><span class="pill ${(ESTADO_RES[r.estado]||['','info'])[1]}">${(ESTADO_RES[r.estado]||[r.estado])[0]}</span></div>`).join('') : '<p class="muted" style="margin-top:14px">Aún sin reservas de alumnos.</p>') : '';
   openModal(`<h3>${escD(t.titulo)}</h3>
@@ -1116,16 +1126,16 @@ async function tareaDetalle(id) {
     ${resHtml}
     ${docente?`<button class="btn full ghost danger" id="delT" style="margin-top:14px">Eliminar tarea</button>`:''}`);
   if (!docente) {
-    (document.querySelector('#teq')||document).querySelectorAll('.rsv').forEach(b => b.onclick = () => reservarTareaForm(id, b.dataset.eid, b.dataset.enom, t));
+    (document.querySelector('#tcats')||document).querySelectorAll('.rsvcat').forEach(b => b.onclick = () => reservarCategoriaForm(id, b.dataset.cid, b.dataset.cnom, t));
   } else {
     $('#delT').onclick = async () => { if(!confirm('¿Eliminar la tarea?'))return; try{ await api(`/tareas/${id}`,{method:'DELETE'}); closeModal(); toast('Tarea eliminada'); viewTareas(); }catch(e){ toast(e.message||'Error'); } };
   }
 }
 
-function reservarTareaForm(tareaId, equipoId, equipoNom, t) {
+function reservarCategoriaForm(tareaId, catId, catNom, t) {
   const grupal = t.tipo === 'grupal';
-  openModal(`<h3>Reservar: ${escD(equipoNom)}</h3>
-    <p class="muted" style="font-size:12px;margin:-4px 0 8px">Dentro de la tarea · fechas fijadas por el docente</p>
+  openModal(`<h3>Reservar categoría: ${escD(catNom)}</h3>
+    <p class="muted" style="font-size:12px;margin:-4px 0 8px">Dentro de la tarea · fechas fijadas por el docente · la unidad la asigna el pañol al entregar</p>
     <div class="field"><label>Inicio</label><input type="datetime-local" value="${dtLocal(t.fecha_inicio)}" disabled></div>
     <div class="field"><label>Término</label><input type="datetime-local" value="${dtLocal(t.fecha_fin)}" disabled></div>
     ${grupal ? `<label style="font-size:12px;font-weight:600;color:var(--muted)">Integrantes del grupo (deben estar en la misma asignatura y sección)</label>
@@ -1146,7 +1156,7 @@ function reservarTareaForm(tareaId, equipoId, equipoNom, t) {
     const integrantes = grupal
       ? [...document.querySelectorAll('#tInts .integrantes-row')].map(r=>({ nombre:r.querySelector('.i-nom').value.trim(), rut:r.querySelector('.i-rut').value.trim() })).filter(x=>x.rut)
       : [];
-    try { await api(`/tareas/${tareaId}/reservar`,{method:'POST',body:{equipo_id:Number(equipoId), integrantes}}); closeModal(); toast('Reserva confirmada'); }
+    try { await api(`/tareas/${tareaId}/reservar`,{method:'POST',body:{categoria_id:Number(catId), integrantes}}); closeModal(); toast('Reserva de categoría confirmada'); }
     catch(e){ $('#rE').textContent=e.message||'Error'; }
   };
 }

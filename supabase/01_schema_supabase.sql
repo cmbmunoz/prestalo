@@ -197,7 +197,8 @@ CREATE TABLE elegibilidad (
 CREATE TABLE reserva (
     id            SERIAL PRIMARY KEY,
     usuario_rut   VARCHAR(12) NOT NULL REFERENCES usuario(rut) ON DELETE RESTRICT,
-    equipo_id     INTEGER     NOT NULL REFERENCES equipo(id)   ON DELETE RESTRICT,
+    equipo_id     INTEGER     REFERENCES equipo(id)   ON DELETE RESTRICT, -- NULL hasta individualizar en la entrega (RF-11)
+    categoria_id  INTEGER     REFERENCES categoria(id),                   -- categoría reservada (RF-11)
     fecha_inicio  TIMESTAMPTZ NOT NULL,
     fecha_fin     TIMESTAMPTZ NOT NULL,
     estado        estado_reserva NOT NULL DEFAULT 'pendiente',

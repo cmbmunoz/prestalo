@@ -397,6 +397,20 @@ app.post('/api/reservas', auth, requireRole('alumno', 'docente'), wrap(async (re
 }));
 
 app.get('/api/mis-reservas', auth, wrap(async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT r.id, r.fecha_inicio, r.fecha_fin, r.estado, r.es_grupal, r.uso_academico,
+              COALESCE(e.nombre, '(unidad por asignar)') AS equipo, e.tipo,
+              COALESCE(ce.nombre, cr.nombre) AS categoria,
+              (r.equipo_id IS NULL) AS por_individualizar,
+              (SELECT count(*) FROM integrante i WHERE i.reserva_id=r.id) AS integrantes
+       FROM reserva r
+       LEFT JOIN equipo e ON e.id=r.equipo_id
+       LEFT JOIN categoria ce ON ce.id=e.categoria_id
+       LEFT JOIN categoria cr ON cr.id=r.categoria_id
+       WHERE r.usuario_rut=$1 ORDER BY r.fecha_inicio DESC`, [req.user.rut]);
+    return res.json(rows);
+  } catch (e) { if (e.code !== '42703') throw e; } // migración 17 sin aplicar → esquema previo
   const { rows } = await db.query(
     `SELECT r.id, r.fecha_inicio, r.fecha_fin, r.estado, r.es_grupal, r.uso_academico,
             e.nombre AS equipo, e.tipo, c.nombre AS categoria,
@@ -413,14 +427,31 @@ app.get('/api/flujo', auth, wrap(async (req, res) => {
   const params = [req.sede];
   let filtro = '';
   if (soloMios) { params.push(req.user.rut); filtro = 'AND r.usuario_rut=$2'; }
-  const { rows } = await db.query(
-    `SELECT r.id, r.estado, r.fecha_inicio, r.fecha_fin, r.usuario_rut,
-            e.nombre AS equipo, e.marca, c.nombre AS categoria, u.nombre AS solicitante,
-            (SELECT p.estado FROM prestamo p WHERE p.reserva_id=r.id) AS prestamo_estado
-     FROM reserva r JOIN equipo e ON e.id=r.equipo_id JOIN categoria c ON c.id=e.categoria_id
-     JOIN usuario u ON u.rut=r.usuario_rut
-     WHERE e.entidad_id=$1 ${filtro}
-     ORDER BY r.fecha_inicio DESC LIMIT 100`, params);
+  let rows;
+  try {
+    ({ rows } = await db.query(
+      `SELECT r.id, r.estado, r.fecha_inicio, r.fecha_fin, r.usuario_rut,
+              COALESCE(e.nombre, '(unidad por asignar)') AS equipo, e.marca,
+              COALESCE(ce.nombre, cr.nombre) AS categoria, u.nombre AS solicitante,
+              (SELECT p.estado FROM prestamo p WHERE p.reserva_id=r.id) AS prestamo_estado
+       FROM reserva r
+       JOIN usuario u ON u.rut=r.usuario_rut
+       LEFT JOIN equipo e ON e.id=r.equipo_id
+       LEFT JOIN categoria ce ON ce.id=e.categoria_id
+       LEFT JOIN categoria cr ON cr.id=r.categoria_id
+       WHERE COALESCE(e.entidad_id, u.entidad_id)=$1 ${filtro}
+       ORDER BY r.fecha_inicio DESC LIMIT 100`, params));
+  } catch (e) {
+    if (e.code !== '42703') throw e; // migración 17 sin aplicar → esquema previo
+    ({ rows } = await db.query(
+      `SELECT r.id, r.estado, r.fecha_inicio, r.fecha_fin, r.usuario_rut,
+              e.nombre AS equipo, e.marca, c.nombre AS categoria, u.nombre AS solicitante,
+              (SELECT p.estado FROM prestamo p WHERE p.reserva_id=r.id) AS prestamo_estado
+       FROM reserva r JOIN equipo e ON e.id=r.equipo_id JOIN categoria c ON c.id=e.categoria_id
+       JOIN usuario u ON u.rut=r.usuario_rut
+       WHERE e.entidad_id=$1 ${filtro}
+       ORDER BY r.fecha_inicio DESC LIMIT 100`, params));
+  }
   const flowOf = (estado, pe) => {
     if (pe === 'devuelto' || estado === 'completada') return 'devuelto';
     if (pe === 'abierto' || pe === 'atrasado') return 'entregado';
@@ -438,12 +469,25 @@ app.get('/api/flujo', auth, wrap(async (req, res) => {
 
 // Detalle de un préstamo/solicitud con el flujo y el historial (prototipo).
 app.get('/api/flujo/:id', auth, wrap(async (req, res) => {
-  const r = (await db.query(
-    `SELECT r.*, e.nombre AS equipo, e.marca, e.codigo_qr, c.nombre AS categoria,
-            COALESCE(l.nombre, '—') AS laboratorio
-     FROM reserva r JOIN equipo e ON e.id=r.equipo_id JOIN categoria c ON c.id=e.categoria_id
-     LEFT JOIN laboratorio l ON l.id=e.laboratorio_id
-     WHERE r.id=$1`, [req.params.id])).rows[0];
+  let r;
+  try {
+    r = (await db.query(
+      `SELECT r.*, COALESCE(e.nombre, '(unidad por asignar)') AS equipo, e.marca, e.codigo_qr,
+              COALESCE(ce.nombre, cr.nombre) AS categoria, COALESCE(l.nombre, '—') AS laboratorio
+       FROM reserva r
+       LEFT JOIN equipo e ON e.id=r.equipo_id
+       LEFT JOIN categoria ce ON ce.id=e.categoria_id
+       LEFT JOIN categoria cr ON cr.id=r.categoria_id
+       LEFT JOIN laboratorio l ON l.id=e.laboratorio_id
+       WHERE r.id=$1`, [req.params.id])).rows[0];
+  } catch (e) {
+    if (e.code !== '42703') throw e; // migración 17 sin aplicar
+    r = (await db.query(
+      `SELECT r.*, e.nombre AS equipo, e.marca, e.codigo_qr, c.nombre AS categoria, COALESCE(l.nombre, '—') AS laboratorio
+       FROM reserva r JOIN equipo e ON e.id=r.equipo_id JOIN categoria c ON c.id=e.categoria_id
+       LEFT JOIN laboratorio l ON l.id=e.laboratorio_id
+       WHERE r.id=$1`, [req.params.id])).rows[0];
+  }
   if (!r) return res.status(404).json({ error: 'No encontrado' });
   if ((req.user.rol === 'alumno' || req.user.rol === 'docente') && r.usuario_rut !== req.user.rut)
     return res.status(403).json({ error: 'No autorizado' });
@@ -543,33 +587,75 @@ app.put('/api/reservas/:id/reprogramar', auth, requireRole(...OPERACION), wrap(a
 
 // ----------------------- Pañolero: agenda / entrega / recepción -----------------------
 app.get('/api/agenda', auth, requireRole(...OPERACION), wrap(async (req, res) => {
-  const { rows } = await db.query(
-    `SELECT r.id, r.fecha_inicio, r.fecha_fin, r.estado, u.nombre AS usuario, u.rut,
-            e.id AS equipo_id, e.nombre AS equipo, e.codigo_qr, e.n_serie, e.marca, e.modelo,
-            e.condicion, e.tipo, c.nombre AS categoria
-     FROM reserva r JOIN usuario u ON u.rut=r.usuario_rut
-     JOIN equipo e ON e.id=r.equipo_id JOIN categoria c ON c.id=e.categoria_id
-     WHERE r.estado='confirmada' AND e.entidad_id=$1
-     ORDER BY r.fecha_inicio`, [req.sede]);
+  let rows;
+  try {
+    // Incluye reservas por CATEGORÍA (equipo_id NULL): el pañolero individualiza al entregar.
+    ({ rows } = await db.query(
+      `SELECT r.id, r.fecha_inicio, r.fecha_fin, r.estado, u.nombre AS usuario, u.rut,
+              e.id AS equipo_id, e.nombre AS equipo, e.codigo_qr, e.n_serie, e.marca, e.modelo,
+              e.condicion, e.tipo, COALESCE(ce.nombre, cr.nombre) AS categoria,
+              r.categoria_id, (r.equipo_id IS NULL) AS por_individualizar
+       FROM reserva r
+       JOIN usuario u ON u.rut=r.usuario_rut
+       LEFT JOIN equipo e ON e.id=r.equipo_id
+       LEFT JOIN categoria ce ON ce.id=e.categoria_id
+       LEFT JOIN categoria cr ON cr.id=r.categoria_id
+       WHERE r.estado='confirmada' AND COALESCE(e.entidad_id, u.entidad_id)=$1
+       ORDER BY r.fecha_inicio`, [req.sede]));
+    // Para las reservas por individualizar, adjuntar las unidades disponibles de la categoría.
+    for (const row of rows) {
+      if (row.por_individualizar && row.categoria_id) {
+        row.unidades = (await db.query(
+          `SELECT id, nombre, codigo_qr FROM equipo
+           WHERE categoria_id=$1 AND entidad_id=$2 AND estado='disponible' ORDER BY codigo_qr`,
+          [row.categoria_id, req.sede])).rows;
+      }
+    }
+  } catch (e) {
+    if (e.code !== '42703') throw e; // migración 17 sin aplicar → esquema previo
+    ({ rows } = await db.query(
+      `SELECT r.id, r.fecha_inicio, r.fecha_fin, r.estado, u.nombre AS usuario, u.rut,
+              e.id AS equipo_id, e.nombre AS equipo, e.codigo_qr, e.n_serie, e.marca, e.modelo,
+              e.condicion, e.tipo, c.nombre AS categoria
+       FROM reserva r JOIN usuario u ON u.rut=r.usuario_rut
+       JOIN equipo e ON e.id=r.equipo_id JOIN categoria c ON c.id=e.categoria_id
+       WHERE r.estado='confirmada' AND e.entidad_id=$1
+       ORDER BY r.fecha_inicio`, [req.sede]));
+  }
   res.json(rows);
 }));
 
-// Entregar (check-out) — crea préstamo, verifica QR opcional
+// Entregar (check-out) — crea préstamo, verifica QR opcional.
+// RF-11: si la reserva es por categoría (equipo_id NULL), el pañolero individualiza la unidad aquí.
 app.post('/api/entregar', auth, requireRole(...OPERACION), wrap(async (req, res) => {
-  const { reserva_id, qr, condicion_salida } = req.body || {};
+  const { reserva_id, qr, condicion_salida, equipo_id } = req.body || {};
   const r = (await db.query(`SELECT * FROM reserva WHERE id=$1`, [reserva_id])).rows[0];
   if (!r) return res.status(404).json({ error: 'Reserva no encontrada' });
   if (r.estado !== 'confirmada') return res.status(409).json({ error: `La reserva está ${r.estado}` });
-  const eq = (await db.query(`SELECT * FROM equipo WHERE id=$1`, [r.equipo_id])).rows[0];
+
+  let equipoId = r.equipo_id;
+  if (!equipoId) {
+    // Reserva por categoría → el pañolero asigna la unidad física.
+    if (!equipo_id) return res.status(400).json({ error: 'Selecciona la unidad a entregar (individualización).' });
+    const u = (await db.query(`SELECT * FROM equipo WHERE id=$1 AND entidad_id=$2`, [equipo_id, req.sede])).rows[0];
+    if (!u) return res.status(404).json({ error: 'Unidad no encontrada en esta sede' });
+    if (r.categoria_id && u.categoria_id !== r.categoria_id)
+      return res.status(409).json({ error: 'La unidad no corresponde a la categoría reservada' });
+    if (u.estado !== 'disponible') return res.status(409).json({ error: `La unidad no está disponible (estado: ${u.estado})` });
+    await db.query(`UPDATE reserva SET equipo_id=$2 WHERE id=$1`, [r.id, equipo_id]);
+    equipoId = equipo_id;
+  }
+
+  const eq = (await db.query(`SELECT * FROM equipo WHERE id=$1`, [equipoId])).rows[0];
   if (qr && qr.toLowerCase() !== eq.codigo_qr.toLowerCase())
     return res.status(409).json({ error: `El QR escaneado (${qr}) no corresponde al equipo` });
 
   const p = (await db.query(
     `INSERT INTO prestamo (reserva_id, usuario_rut, equipo_id, panolero_rut, condicion_salida, estado)
      VALUES ($1,$2,$3,$4,$5,'abierto') RETURNING id`,
-    [r.id, r.usuario_rut, r.equipo_id, req.user.rut, condicion_salida || eq.condicion])).rows[0];
+    [r.id, r.usuario_rut, equipoId, req.user.rut, condicion_salida || eq.condicion])).rows[0];
   await db.query(`UPDATE reserva SET estado='en_uso' WHERE id=$1`, [r.id]);
-  await db.query(`UPDATE equipo SET estado='prestado' WHERE id=$1`, [r.equipo_id]);
+  await db.query(`UPDATE equipo SET estado='prestado' WHERE id=$1`, [equipoId]);
   res.status(201).json({ id: p.id, mensaje: 'Entrega registrada' });
 }));
 
@@ -1269,10 +1355,23 @@ app.get('/api/tareas/:id', auth, wrap(async (req, res) => {
   try {
     categorias = (await db.query(
       `SELECT c.id, c.nombre, c.simbolo,
-              (SELECT count(*)::int FROM equipo e WHERE e.categoria_id=c.id AND e.entidad_id=$2 AND e.estado='disponible') AS disponibles
+              GREATEST(0,
+                (SELECT count(*)::int FROM equipo e WHERE e.categoria_id=c.id AND e.entidad_id=$2 AND e.estado='disponible')
+                - COALESCE((SELECT count(*)::int FROM reserva r JOIN usuario u ON u.rut=r.usuario_rut
+                            WHERE r.categoria_id=c.id AND r.equipo_id IS NULL AND r.estado='confirmada' AND u.entidad_id=$2), 0)
+              ) AS disponibles
        FROM tarea_categoria tc JOIN categoria c ON c.id=tc.categoria_id
        WHERE tc.tarea_id=$1 ORDER BY c.nombre`, [req.params.id, req.sede])).rows;
-  } catch (e) { if (e.code !== '42P01') throw e; } // migración 16 aún sin aplicar
+  } catch (e) {
+    if (e.code === '42P01') { /* migración 16 sin aplicar */ }
+    else if (e.code === '42703') { // migración 17 sin aplicar → sin descuento por reservas de categoría
+      categorias = (await db.query(
+        `SELECT c.id, c.nombre, c.simbolo,
+                (SELECT count(*)::int FROM equipo e WHERE e.categoria_id=c.id AND e.entidad_id=$2 AND e.estado='disponible') AS disponibles
+         FROM tarea_categoria tc JOIN categoria c ON c.id=tc.categoria_id
+         WHERE tc.tarea_id=$1 ORDER BY c.nombre`, [req.params.id, req.sede])).rows;
+    } else throw e;
+  }
   // Unidades disponibles para reservar: equipos de esas categorías en la sede.
   // (Si no hay categorías —tareas legadas— se usan los equipos habilitados por tarea_equipo.)
   let equipos;
@@ -1390,30 +1489,24 @@ app.delete('/api/tareas/:id', auth, requireRole('docente', 'admin'), wrap(async 
 }));
 
 app.post('/api/tareas/:id/reservar', auth, requireRole('alumno', 'docente'), wrap(async (req, res) => {
-  const { equipo_id, integrantes } = req.body || {};
-  if (!equipo_id) return res.status(400).json({ error: 'Debes elegir un equipo disponible' });
+  const { categoria_id, integrantes } = req.body || {};
+  if (!categoria_id) return res.status(400).json({ error: 'Debes elegir una categoría disponible' });
   const t = (await db.query(`SELECT t.* FROM tarea t JOIN asignatura a ON a.id=t.asignatura_id JOIN carrera c ON c.id=a.carrera_id WHERE t.id=$1 AND c.entidad_id=$2`, [req.params.id, req.sede])).rows[0];
   if (!t) return res.status(404).json({ error: 'Tarea no encontrada' });
   // El solicitante debe estar inscrito en la asignatura/sección de la tarea.
   const insc = await db.query(`SELECT 1 FROM usuario_asignatura WHERE usuario_rut=$1 AND asignatura_id=$2`, [req.user.rut, t.asignatura_id]);
   if (!insc.rows.length) return res.status(403).json({ error: 'No estás inscrito en la asignatura/sección de la tarea' });
 
-  const eq = (await db.query(`SELECT * FROM equipo WHERE id=$1 AND entidad_id=$2`, [equipo_id, req.sede])).rows[0];
-  if (!eq) return res.status(404).json({ error: 'Equipo no encontrado' });
-  if (eq.estado !== 'disponible') return res.status(409).json({ error: `El equipo no está disponible (estado: ${eq.estado})` });
-
-  // RF-11: la categoría del equipo debe estar habilitada en la tarea…
+  // RF-11: la categoría debe estar habilitada en la tarea…
   let catOk = false;
   try {
-    catOk = (await db.query(`SELECT 1 FROM tarea_categoria WHERE tarea_id=$1 AND categoria_id=$2`, [req.params.id, eq.categoria_id])).rowCount > 0;
+    catOk = (await db.query(`SELECT 1 FROM tarea_categoria WHERE tarea_id=$1 AND categoria_id=$2`, [req.params.id, categoria_id])).rowCount > 0;
   } catch (e) { if (e.code !== '42P01') throw e; } // migración 16 aún sin aplicar
-  if (!catOk) { // compatibilidad con tareas legadas por equipo
-    const te = await db.query(`SELECT 1 FROM tarea_equipo WHERE tarea_id=$1 AND equipo_id=$2`, [req.params.id, equipo_id]);
-    if (!te.rows.length) return res.status(403).json({ error: 'La categoría del equipo no está habilitada para la tarea (RF-11).' });
-  }
-  // …y además ser elegible para la asignatura.
-  const eleg = await db.query(`SELECT 1 FROM elegibilidad WHERE asignatura_id=$1 AND categoria_id=$2`, [t.asignatura_id, eq.categoria_id]);
-  if (!eleg.rows.length) return res.status(403).json({ error: 'El equipo no está habilitado para la asignatura (elegibilidad, RF-11).' });
+  if (!catOk) return res.status(403).json({ error: 'La categoría no está habilitada para la tarea (RF-11).' });
+  // …y ser elegible para la asignatura.
+  const eleg = await db.query(`SELECT 1 FROM elegibilidad WHERE asignatura_id=$1 AND categoria_id=$2`, [t.asignatura_id, categoria_id]);
+  if (!eleg.rows.length) return res.status(403).json({ error: 'La categoría no está habilitada para la asignatura (elegibilidad, RF-11).' });
+  const cat = (await db.query(`SELECT nombre FROM categoria WHERE id=$1`, [categoria_id])).rows[0];
 
   // RF-11: las fechas COINCIDEN con las de la tarea (las define el docente).
   const ini = new Date(t.fecha_inicio), fin = new Date(t.fecha_fin), now = new Date();
@@ -1421,11 +1514,23 @@ app.post('/api/tareas/:id/reservar', auth, requireRole('alumno', 'docente'), wra
   // RF-11: anticipación en HORAS HÁBILES (parametrizable por sede).
   let minHoras = ANTICIPACION_MIN_H;
   try {
-    const cfg = (await db.query(`SELECT horas_anticipacion FROM entidad WHERE id=$1`, [eq.entidad_id])).rows[0];
+    const cfg = (await db.query(`SELECT horas_anticipacion FROM entidad WHERE id=$1`, [req.sede])).rows[0];
     if (cfg && Number.isFinite(Number(cfg.horas_anticipacion))) minHoras = Number(cfg.horas_anticipacion);
   } catch (e) { if (e.code !== '42703') throw e; }
   if (horasHabilesEntre(now, ini) < minHoras)
     return res.status(400).json({ error: `El plazo de reserva es de al menos ${minHoras} h hábiles de anticipación respecto al inicio de la tarea. Para excepciones, usa una solicitud especial.` });
+
+  // RF-11: capacidad de la categoría = unidades disponibles − reservas de categoría ya confirmadas (sin individualizar).
+  const disp = (await db.query(`SELECT count(*)::int n FROM equipo WHERE categoria_id=$1 AND entidad_id=$2 AND estado='disponible'`, [categoria_id, req.sede])).rows[0].n;
+  let resCat = 0;
+  try {
+    resCat = (await db.query(
+      `SELECT count(*)::int n FROM reserva r JOIN usuario u ON u.rut=r.usuario_rut
+       WHERE r.categoria_id=$1 AND r.equipo_id IS NULL AND r.estado='confirmada' AND u.entidad_id=$2`,
+      [categoria_id, req.sede])).rows[0].n;
+  } catch (e) { if (e.code !== '42703') throw e; } // sin migración 17 → columna categoria_id aún no existe
+  if (disp - resCat <= 0)
+    return res.status(409).json({ error: `No hay unidades disponibles en la categoría ${cat ? cat.nombre : ''} para las fechas de la tarea.` });
 
   const sanc = await db.query(`SELECT motivo FROM v_sanciones_vigentes WHERE usuario_rut=$1 AND (asignatura_id IS NULL OR asignatura_id=$2)`, [req.user.rut, t.asignatura_id]);
   if (sanc.rows.length) return res.status(403).json({ error: `Bloqueado por sanción vigente: ${sanc.rows[0].motivo}` });
@@ -1444,17 +1549,23 @@ app.post('/api/tareas/:id/reservar', auth, requireRole('alumno', 'docente'), wra
   }
   const esGrupal = grupo.length > 0;
 
-  const r = (await db.query(
-    `INSERT INTO reserva (usuario_rut, equipo_id, fecha_inicio, fecha_fin, estado, uso_academico, es_grupal, tarea_id)
-     VALUES ($1,$2,$3,$4,'confirmada',TRUE,$5,$6) RETURNING id`,
-    [req.user.rut, equipo_id, ini, fin, esGrupal, req.params.id])).rows[0];
+  // RF-11: reserva POR CATEGORÍA (sin individualizar). El pañolero asigna la unidad al entregar.
+  let r;
+  try {
+    r = (await db.query(
+      `INSERT INTO reserva (usuario_rut, equipo_id, categoria_id, fecha_inicio, fecha_fin, estado, uso_academico, es_grupal, tarea_id)
+       VALUES ($1,NULL,$2,$3,$4,'confirmada',TRUE,$5,$6) RETURNING id`,
+      [req.user.rut, categoria_id, ini, fin, esGrupal, req.params.id])).rows[0];
+  } catch (e) {
+    if (e.code === '42703' || e.code === '23502') return res.status(409).json({ error: 'Falta correr la migración 17 (reserva por categoría).' });
+    throw e;
+  }
   await db.query(`INSERT INTO integrante (reserva_id, usuario_rut, nombre, rut, es_responsable) VALUES ($1,$2,$3,$4,TRUE)`, [r.id, req.user.rut, req.user.nombre, req.user.rut]);
   for (const g of grupo) {
     if (g.rut === req.user.rut) continue;
     await db.query(`INSERT INTO integrante (reserva_id, nombre, rut, es_responsable) VALUES ($1,$2,$3,FALSE) ON CONFLICT (reserva_id, rut) DO NOTHING`, [r.id, g.nombre, g.rut]);
   }
-  await db.query(`UPDATE equipo SET estado='reservado' WHERE id=$1`, [equipo_id]);
-  res.status(201).json({ id: r.id, mensaje: 'Reserva confirmada dentro de la tarea.' });
+  res.status(201).json({ id: r.id, mensaje: `Reserva de la categoría "${cat ? cat.nombre : ''}" confirmada. El pañol asignará la unidad al entregar.` });
 }));
 
 // ----------------------- Solicitudes especiales -----------------------
