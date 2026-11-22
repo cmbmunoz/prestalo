@@ -675,6 +675,76 @@ app.post('/api/entregar', auth, requireRole(...OPERACION), wrap(async (req, res)
 }));
 
 // Equipos por recibir (en préstamo)
+// Dashboard operativo (Control de Inventario): KPIs + entregas de hoy.
+app.get('/api/panol/dashboard', auth, requireRole(...OPERACION), wrap(async (req, res) => {
+  const sede = req.sede;
+  const one = async (sql, p = [sede]) => (await db.query(sql, p)).rows[0].n;
+
+  const reservas_pendientes = await one(
+    `SELECT count(*)::int n FROM reserva r LEFT JOIN equipo e ON e.id=r.equipo_id JOIN usuario u ON u.rut=r.usuario_rut
+     WHERE r.estado='confirmada' AND COALESCE(e.entidad_id,u.entidad_id)=$1`);
+  const entregas_hoy = await one(
+    `SELECT count(*)::int n FROM prestamo p JOIN equipo e ON e.id=p.equipo_id
+     WHERE e.entidad_id=$1 AND p.fecha_salida::date = current_date`);
+  const devoluciones_hoy = await one(
+    `SELECT count(*)::int n FROM prestamo p JOIN equipo e ON e.id=p.equipo_id LEFT JOIN reserva r ON r.id=p.reserva_id
+     WHERE e.entidad_id=$1 AND p.estado IN ('abierto','atrasado') AND (r.fecha_fin IS NULL OR r.fecha_fin::date <= current_date)`);
+  let alertas_stock = 0;
+  try {
+    alertas_stock = await one(
+      `SELECT count(*)::int n FROM (
+         SELECT e.categoria_id, e.nombre FROM equipo e
+         WHERE e.entidad_id=$1 AND e.tipo='equipo'
+         GROUP BY e.categoria_id, e.nombre
+         HAVING count(*) FILTER (WHERE e.estado='disponible') <= 1) s`);
+  } catch (e) { /* tolerante */ }
+
+  const rng = (ini, fin) => one(
+    `SELECT count(*)::int n FROM reserva r LEFT JOIN equipo e ON e.id=r.equipo_id JOIN usuario u ON u.rut=r.usuario_rut
+     WHERE r.estado IN ('confirmada','en_uso') AND COALESCE(e.entidad_id,u.entidad_id)=$1
+       AND r.fecha_inicio >= ${ini} AND r.fecha_inicio < ${fin}`);
+  const prog_hoy    = await rng("current_date", "current_date + interval '1 day'");
+  const prog_semana = await rng("date_trunc('week', current_date)", "date_trunc('week', current_date) + interval '7 day'");
+  const prog_mes    = await rng("date_trunc('month', current_date)", "date_trunc('month', current_date) + interval '1 month'");
+
+  const entregas = (await db.query(
+    `SELECT r.id, r.fecha_inicio, r.fecha_fin, u.nombre AS estudiante, u.rut,
+            COALESCE(ta.nombre,'—') AS asignatura,
+            COALESCE(ce.nombre, cr.nombre, e.nombre) AS item,
+            e.nombre AS equipo, e.codigo_qr, COALESCE(ce.nombre, cr.nombre) AS categoria,
+            (r.equipo_id IS NULL) AS por_individualizar, r.categoria_id
+     FROM reserva r JOIN usuario u ON u.rut=r.usuario_rut
+     LEFT JOIN equipo e ON e.id=r.equipo_id
+     LEFT JOIN categoria ce ON ce.id=e.categoria_id
+     LEFT JOIN categoria cr ON cr.id=r.categoria_id
+     LEFT JOIN tarea t ON t.id=r.tarea_id
+     LEFT JOIN asignatura ta ON ta.id=t.asignatura_id
+     WHERE r.estado='confirmada' AND COALESCE(e.entidad_id,u.entidad_id)=$1
+       AND r.fecha_inicio::date = current_date
+     ORDER BY r.fecha_inicio`, [sede])).rows;
+  for (const row of entregas) {
+    if (row.por_individualizar && row.categoria_id) {
+      row.unidades = (await db.query(
+        `SELECT id, nombre, codigo_qr FROM equipo WHERE categoria_id=$1 AND entidad_id=$2 AND estado='disponible' ORDER BY codigo_qr`,
+        [row.categoria_id, sede])).rows;
+    }
+  }
+  res.json({ reservas_pendientes, entregas_hoy, devoluciones_hoy, alertas_stock, prog_hoy, prog_semana, prog_mes, entregas });
+}));
+
+// Historial de entregas (préstamos) de la sede.
+app.get('/api/entregas/historial', auth, requireRole(...OPERACION), wrap(async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT p.id, p.fecha_salida, p.fecha_retorno, p.estado, p.condicion_salida, p.condicion_retorno,
+            u.nombre AS estudiante, u.rut, e.nombre AS equipo, c.nombre AS categoria,
+            pa.nombre AS panolero
+     FROM prestamo p JOIN usuario u ON u.rut=p.usuario_rut
+     JOIN equipo e ON e.id=p.equipo_id JOIN categoria c ON c.id=e.categoria_id
+     LEFT JOIN usuario pa ON pa.rut=p.panolero_rut
+     WHERE e.entidad_id=$1 ORDER BY p.fecha_salida DESC LIMIT 200`, [req.sede]);
+  res.json(rows);
+}));
+
 app.get('/api/por-recibir', auth, requireRole(...OPERACION), wrap(async (req, res) => {
   const { rows } = await db.query(
     `SELECT p.id AS prestamo_id, p.fecha_salida, u.nombre AS usuario, u.rut,

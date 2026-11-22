@@ -152,16 +152,28 @@ const MENUS = {
   alumno:   [['catalogo','📚','Catálogo'],['kits','🎒','Kits'],['asignaturas','🎓','Mis asignaturas'],['reservas','📅','Mis reservas'],['disponibilidad','🗓️','Disponibilidad'],['solicitudes','🙋','Solicitudes especiales'],['anuncios','📢','Anuncios'],['manuales','❓','Ayuda'],['perfil','👤','Mi perfil']],
   // Nota: "Compañeros" del alumno ahora vive dentro de cada asignatura (ver Mis asignaturas).
   docente:  [['tareas','📝','Tareas'],['solicitudes','🙋','Solicitudes especiales'],['grupos','👪','Grupos'],['kits','🎒','Kits'],['catalogo','📚','Catálogo'],['asignaturas','🎓','Mis asignaturas'],['reservas','📅','Mis reservas'],['disponibilidad','🗓️','Disponibilidad'],['companeros','🧑‍🤝‍🧑','Alumnos'],['anuncios','📢','Anuncios'],['manuales','❓','Ayuda'],['perfil','👤','Mi perfil']],
-  panolero: [['agenda','📋','Agenda / Entregas'],['recibir','📥','Recibir'],['pedidos','🧾','Pedidos'],['importar','📦','Importar inventario'],['disponibilidad','🗓️','Disponibilidad'],['bloqueos','🚫','Bloqueos'],['anuncios','📢','Anuncios'],['manuales','❓','Ayuda'],['perfil','👤','Mi perfil']],
-  // Jefe de Pañol: operación + catálogo/mantención de SU sede (sin administración general)
-  jefe_panol: [[null,null,'Operación'],
-             ['agenda','📋','Agenda / Entregas'],['recibir','📥','Recibir'],['pedidos','🧾','Pedidos'],['disponibilidad','🗓️','Disponibilidad'],['bloqueos','🚫','Bloqueos'],
-             [null,null,'Pañol de mi sede'],
-             ['inventario','🧰','Inventario'],['mantenciones','🔧','Mantenciones'],['importar','📦','Importar inventario'],
+  panolero: [['inventario','📦','Inventario'],
+             [null,null,'Entregas'],
+             ['entregas_plan','🚚','Planificación y ejecución'],['entregas_hist','🧾','Historial de entregas'],
+             [null,null,'Operación'],
+             ['recibir','📥','Recibir'],['pedidos','🧾','Pedidos'],['equipos','🧰','Equipos'],['importar','📦','Importar inventario'],['disponibilidad','🗓️','Disponibilidad'],['bloqueos','🚫','Bloqueos'],
              [null,null,'Sistema'],
              ['anuncios','📢','Anuncios'],['manuales','❓','Ayuda'],['perfil','👤','Mi perfil']],
-  admin:    [[null,null,'Operación'],
-             ['kpis','📊','Panel'],['reportes','📈','Reportes'],['inventario','🧰','Inventario'],['pedidos','🧾','Pedidos'],['disponibilidad','🗓️','Disponibilidad'],['bloqueos','🚫','Bloqueos'],['mantenciones','🔧','Mantenciones'],
+  // Jefe de Pañol: operación + catálogo/mantención de SU sede (sin administración general)
+  jefe_panol: [['inventario','📦','Inventario'],
+             [null,null,'Entregas'],
+             ['entregas_plan','🚚','Planificación y ejecución'],['entregas_hist','🧾','Historial de entregas'],
+             [null,null,'Operación'],
+             ['recibir','📥','Recibir'],['pedidos','🧾','Pedidos'],['disponibilidad','🗓️','Disponibilidad'],['bloqueos','🚫','Bloqueos'],
+             [null,null,'Pañol de mi sede'],
+             ['equipos','🧰','Equipos'],['mantenciones','🔧','Mantenciones'],['importar','📦','Importar inventario'],
+             [null,null,'Sistema'],
+             ['anuncios','📢','Anuncios'],['manuales','❓','Ayuda'],['perfil','👤','Mi perfil']],
+  admin:    [['inventario','📦','Inventario'],
+             [null,null,'Entregas'],
+             ['entregas_plan','🚚','Planificación y ejecución'],['entregas_hist','🧾','Historial de entregas'],
+             [null,null,'Operación'],
+             ['kpis','📊','Panel'],['reportes','📈','Reportes'],['equipos','🧰','Equipos'],['pedidos','🧾','Pedidos'],['disponibilidad','🗓️','Disponibilidad'],['bloqueos','🚫','Bloqueos'],['mantenciones','🔧','Mantenciones'],
              [null,null,'Gestión académica'],
              ['importar','📥','Importar Excel'],['autoriz','✅','Autorizaciones'],['grupos','👪','Grupos'],['kits','🎒','Kits'],['sanciones','⛔','Sanciones'],['usuarios','👥','Usuarios'],['academico','🎓','Académico'],['catalogos','🗂️','Catálogos'],
              [null,null,'Sistema'],
@@ -241,10 +253,13 @@ async function render(key) {
     if (key === 'catalogo')   return viewCatalogo();
     if (key === 'kits')       return viewKits();
     if (key === 'reservas')   return viewReservas();
-    if (key === 'agenda')     return viewAgenda();
+    if (key === 'agenda')     return viewEntregasPlan();
+    if (key === 'entregas_plan') return viewEntregasPlan();
+    if (key === 'entregas_hist') return viewHistorialEntregas();
     if (key === 'recibir')    return viewRecibir();
     if (key === 'kpis')       return viewKpis();
-    if (key === 'inventario') return viewInventario();
+    if (key === 'inventario') return viewInventarioDash();
+    if (key === 'equipos')    return viewInventario();
     if (key === 'mantenciones') return viewMantenciones();
     if (key === 'importar')   return viewImportar();
     if (key === 'autoriz')    return viewAutoriz();
@@ -381,6 +396,85 @@ async function viewReservas() {
 function unidadLinea(x) {
   return `Unidad <b>${escD(x.codigo_qr)}</b>${x.n_serie ? ' · N° serie ' + escD(x.n_serie) : ''}`
     + `${x.marca ? ' · ' + escD(x.marca) : ''}${x.modelo ? ' ' + escD(x.modelo) : ''}`;
+}
+function fmtHora(dt) { try { return new Date(dt).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } }
+
+// ===================== Control de Inventario (dashboard operativo) =====================
+async function viewInventarioDash() {
+  h(`<h2 class="page">Control de Inventario</h2>
+     <p class="muted">Gestión operativa de equipos, reservas y entregas del pañol.</p>
+     <div id="invDash">Cargando…</div>`);
+  let d;
+  try { d = await api('/panol/dashboard'); } catch (e) { $('#invDash').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
+  const kpi = (ic, label, val, sub) => `<div class="card" style="flex:1;min-width:190px">
+    <div style="font-size:12px;color:var(--muted);font-weight:600">${ic} ${label}</div>
+    <div style="font-size:30px;font-weight:800;margin:4px 0">${val}</div>
+    <div style="font-size:11.5px;color:var(--muted)">${sub}</div></div>`;
+  const maxProg = Math.max(d.prog_hoy, d.prog_semana, d.prog_mes, 1);
+  const bar = (label, n) => `<div style="margin:8px 0"><div style="display:flex;justify-content:space-between;font-size:12.5px"><span>📅 ${label}</span><b>${n} entregas</b></div>
+    <div style="height:7px;background:#eef1f0;border-radius:6px;overflow:hidden;margin-top:3px"><div style="height:100%;width:${Math.round(n / maxProg * 100)}%;background:var(--brand,#0E8F86)"></div></div></div>`;
+  const rows = d.entregas.length
+    ? d.entregas.map((a, i) => `<tr>
+        <td>🕐 ${fmtHora(a.fecha_inicio)}</td>
+        <td>${escD(a.estudiante)}</td>
+        <td>${escD(a.asignatura)}</td>
+        <td>${escD(a.item)}${a.por_individualizar ? ' <span class="pill info" style="font-size:10px">por asignar</span>' : ''}</td>
+        <td style="text-align:center">1</td>
+        <td><span class="pill warn">Pendiente</span></td>
+        <td><button class="btn sm ent" data-i="${i}">Entregar</button></td></tr>`).join('')
+    : '<tr><td colspan="7" class="muted">No hay entregas programadas para hoy.</td></tr>';
+  $('#invDash').innerHTML = `
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+      ${kpi('📅', 'Reservas pendientes', d.reservas_pendientes, 'Por preparar y entregar')}
+      ${kpi('✅', 'Entregas confirmadas', d.entregas_hoy, 'Entregadas hoy')}
+      ${kpi('📦', 'Devoluciones esperadas', d.devoluciones_hoy, 'Programadas para hoy')}
+      ${kpi('⚠️', 'Alertas de stock', d.alertas_stock, 'Equipos con stock bajo')}
+    </div>
+    <div class="panel"><h3>Entregas programadas</h3>${bar('Hoy', d.prog_hoy)}${bar('Esta semana', d.prog_semana)}${bar('Este mes', d.prog_mes)}</div>
+    <div class="panel" style="margin-top:14px"><h3>Entregas programadas – Hoy (${d.entregas.length})</h3>
+      <table style="width:100%"><thead><tr><th>Hora</th><th>Estudiante</th><th>Asignatura</th><th>Equipo o Kit</th><th>Cant.</th><th>Estado</th><th>Acciones</th></tr></thead>
+      <tbody id="invRows">${rows}</tbody></table></div>`;
+  $('#invRows').querySelectorAll('.ent').forEach(b => b.onclick = () => modalEntregar(d.entregas[Number(b.dataset.i)]));
+}
+
+// ===================== Planificación y Ejecución de Entregas =====================
+async function viewEntregasPlan() {
+  h(`<h2 class="page">Planificación y Ejecución de Entregas</h2>
+     <p class="muted">Gestiona las entregas programadas, confirma retiros y controla el estado de las reservas.</p>
+     <div id="epWrap">Cargando…</div>`);
+  let ag;
+  try { ag = await api('/agenda'); } catch (e) { $('#epWrap').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
+  const now = Date.now();
+  const atrasadas = ag.filter(a => new Date(a.fecha_inicio).getTime() < now).length;
+  const sinUnidad = ag.filter(a => a.por_individualizar && (!a.unidades || !a.unidades.length)).length;
+  const alertas = `<div class="panel"><h3>⚠️ Alertas operativas</h3>
+    <div class="row"><div class="info"><b>Entregas atrasadas</b><small>No retiradas en el horario programado.</small></div><span class="pill ${atrasadas ? 'bad' : 'ok'}">${atrasadas}</span></div>
+    <div class="row"><div class="info"><b>Equipos sin disponibilidad</b><small>Reservas por categoría sin unidades para asignar.</small></div><span class="pill ${sinUnidad ? 'warn' : 'ok'}">${sinUnidad}</span></div></div>`;
+  const lista = ag.length
+    ? ag.map((a, i) => `<div class="row">
+        <div class="ava">${icon(a.categoria)}</div>
+        <div class="info"><b>${escD(a.por_individualizar ? a.categoria : a.equipo)}</b><small>${escD(a.usuario)} · ${fmtDate(a.fecha_inicio)} → ${fmtDate(a.fecha_fin)}${a.por_individualizar ? ` · ${(a.unidades ? a.unidades.length : 0)} unidad(es) disp.` : ''}</small></div>
+        <button class="btn sm ent" data-i="${i}">Entregar</button></div>`).join('')
+    : '<p class="muted">No hay entregas programadas.</p>';
+  $('#epWrap').innerHTML = `${alertas}<div class="panel" style="margin-top:14px"><h3>Entregas programadas (${ag.length})</h3>${lista}</div>`;
+  $('#epWrap').querySelectorAll('.ent').forEach(b => b.onclick = () => modalEntregar(ag[Number(b.dataset.i)]));
+}
+
+// ===================== Historial de entregas =====================
+async function viewHistorialEntregas() {
+  h(`<h2 class="page">Historial de entregas</h2>
+     <p class="muted">Entregas y devoluciones registradas en la sede.</p>
+     <div id="hist">Cargando…</div>`);
+  let rows;
+  try { rows = await api('/entregas/historial'); } catch (e) { $('#hist').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
+  if (!rows.length) { $('#hist').innerHTML = '<p class="muted">Sin entregas registradas.</p>'; return; }
+  $('#hist').innerHTML = `<table style="width:100%"><thead><tr><th>Entrega</th><th>Estudiante</th><th>Equipo</th><th>Categoría</th><th>Pañolero</th><th>Estado</th><th>Devolución</th></tr></thead><tbody>${
+    rows.map(r => { const dev = r.estado === 'devuelto'; return `<tr>
+      <td>${fmtDate(r.fecha_salida)}</td><td>${escD(r.estudiante)}</td><td>${escD(r.equipo)}</td><td>${escD(r.categoria)}</td>
+      <td>${escD(r.panolero || '—')}</td>
+      <td><span class="pill ${dev ? 'ok' : (r.estado === 'atrasado' ? 'bad' : 'warn')}">${dev ? 'Devuelto' : (r.estado === 'atrasado' ? 'Atrasado' : 'En préstamo')}</span></td>
+      <td>${r.fecha_retorno ? fmtDate(r.fecha_retorno) : '—'}</td></tr>`; }).join('')
+  }</tbody></table>`;
 }
 async function viewAgenda() {
   h(`<h2 class="page">Agenda de entregas</h2><div id="list"></div>`);
