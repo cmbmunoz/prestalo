@@ -440,6 +440,20 @@ const INVDASH_CSS = `
 .invd .tl .lanelb{font-size:12px;color:#4b5563;font-weight:600;display:flex;align-items:center;gap:6px;margin-top:8px}
 .invd .tl .now{position:absolute;top:16px;bottom:4px;width:2px;background:var(--b);z-index:3}
 .invd .tl .now .pin{position:absolute;top:-16px;left:50%;transform:translateX(-50%);background:var(--b);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:9px;white-space:nowrap}
+.invd .wkgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:4px}
+.invd .wkcell{border:1px solid #eef1f5;border-radius:10px;padding:8px 3px;text-align:center;background:#f9fafb}
+.invd .wkcell.has{background:var(--b2);border-color:#cfe0ff}
+.invd .wkcell.today{outline:2px solid var(--b);outline-offset:-1px}
+.invd .wkcell .wd{font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.02em}
+.invd .wkcell .wn{font-size:16px;font-weight:800;color:#111827;margin:1px 0}
+.invd .wkcell .wb{font-size:10px;font-weight:700;color:var(--b);min-height:12px}
+.invd .mwk{display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid #eef1f5;border-radius:10px;padding:10px 12px;margin:6px 0;background:#f9fafb}
+.invd .mwk.has{background:var(--b2);border-color:#cfe0ff}
+.invd .mwk.cur{outline:2px solid var(--b);outline-offset:-1px}
+.invd .mwk .ml{font-size:12.5px;color:#374151;font-weight:600}
+.invd .mwk .mn{font-size:12px;font-weight:700;color:var(--b);white-space:nowrap}
+.invd .refpick{border:1px solid #d7dce3;border-radius:9px;padding:6px 9px;font-size:12.5px;background:#fff;color:#374151;margin-top:8px}
+.invd .refpick::-webkit-calendar-picker-indicator{cursor:pointer}
 .invd .filt{background:#fff;border:1px solid #eceff3;border-radius:14px;padding:14px 16px;display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px}
 .invd .filt .ft{display:flex;align-items:center;gap:8px;color:#374151;font-weight:600;font-size:13px}
 .invd .filt .fg{display:flex;flex-direction:column;gap:3px;min-width:150px}
@@ -465,20 +479,67 @@ function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
 function fmtFechaLarga(d) {
   try { return 'Hoy, ' + d.toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' }); } catch (e) { return ''; }
 }
-async function viewInventarioDash(rango = 'hoy', modo = 'programadas') {
+async function viewInventarioDash(rango = 'hoy', modo = 'programadas', ref = null) {
   h(`<div class="invd"><style>${INVDASH_CSS}</style><div id="invDash">Cargando…</div></div>`);
   let d;
-  try { d = await api('/panol/dashboard?rango=' + rango); } catch (e) { $('#invDash').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
+  try { d = await api('/panol/dashboard?rango=' + rango + (ref ? '&ref=' + ref : '')); } catch (e) { $('#invDash').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
   const rangoLabel = { hoy: 'Hoy', semana: 'Esta semana', mes: 'Este mes' };
+  // Fecha base: la elegida en el calendario (ref) o hoy.
+  const baseD = ref ? new Date(ref + 'T12:00:00') : new Date();
+  const lunesDe = b => { const x = new Date(b); const wd = (x.getDay() + 6) % 7; x.setHours(0,0,0,0); x.setDate(x.getDate() - wd); return x; };
+  const isoDay = x => { const y = x.getFullYear(), m = ('0'+(x.getMonth()+1)).slice(-2), dd = ('0'+x.getDate()).slice(-2); return `${y}-${m}-${dd}`; };
+  const hoyISO = isoDay(new Date());
 
-  // Línea de tiempo del día (siempre HOY) 08:00–19:00.
-  const AX0 = 8, AX1 = 19, SPAN = AX1 - AX0;
-  const pos = t => { const dt = new Date(t); const hh = dt.getHours() + dt.getMinutes() / 60; return Math.max(0, Math.min(100, (hh - AX0) / SPAN * 100)); };
-  const ejes = []; for (let hgt = AX0; hgt <= AX1; hgt++) ejes.push(('0' + hgt).slice(-2) + ':00');
-  const blkEnt = d.tl_entregas.map(a => { const l = pos(a.fecha_inicio); const r = pos(a.fecha_fin || a.fecha_inicio); const w = Math.max(3, r - l); return `<div class="blk" style="left:${l}%;width:${w}%" title="${escD(a.estudiante)} · ${fmtHora(a.fecha_inicio)}"></div>`; }).join('');
-  const blkDev = d.devoluciones.map(p => { const l = pos(p.esperada || p.fecha_salida); return `<div class="blk" style="left:${l}%;width:4%" title="${escD(p.estudiante)}"></div>`; }).join('');
-  const nowD = new Date(); const nowH = nowD.getHours() + nowD.getMinutes() / 60;
-  const nowMark = (nowH >= AX0 && nowH <= AX1) ? `<div class="now" style="left:${pos(nowD)}%"><span class="pin">${fmtHora(nowD)}</span></div>` : '';
+  // ===== Línea de tiempo (según el filtro) =====
+  // HOY → franja horaria del día; SEMANA → 7 días marcando entregas; MES → por semanas.
+  let timelineTitulo, timelineHTML;
+  if (rango === 'hoy') {
+    const AX0 = 8, AX1 = 19, SPAN = AX1 - AX0;
+    const pos = t => { const dt = new Date(t); const hh = dt.getHours() + dt.getMinutes() / 60; return Math.max(0, Math.min(100, (hh - AX0) / SPAN * 100)); };
+    const ejes = []; for (let hgt = AX0; hgt <= AX1; hgt++) ejes.push(('0' + hgt).slice(-2) + ':00');
+    const blkEnt = d.entregas.map(a => { const l = pos(a.fecha_inicio); const r = pos(a.fecha_fin || a.fecha_inicio); const w = Math.max(3, r - l); return `<div class="blk" style="left:${l}%;width:${w}%" title="${escD(a.estudiante)} · ${fmtHora(a.fecha_inicio)}"></div>`; }).join('');
+    const blkDev = d.devoluciones.map(p => { const l = pos(p.esperada || p.fecha_salida); return `<div class="blk" style="left:${l}%;width:4%" title="${escD(p.estudiante)}"></div>`; }).join('');
+    const nowD = new Date(); const nowH = nowD.getHours() + nowD.getMinutes() / 60;
+    const esHoy = !ref || ref === hoyISO;
+    const nowMark = (esHoy && nowH >= AX0 && nowH <= AX1) ? `<div class="now" style="left:${pos(nowD)}%"><span class="pin">${fmtHora(nowD)}</span></div>` : '';
+    timelineTitulo = 'Línea de tiempo del día';
+    timelineHTML = `<div class="tl">
+          <div class="axis">${ejes.map(e => `<span>${e}</span>`).join('')}</div>
+          <div class="lanelb">📦 Entregas (${d.entregas.length})</div>
+          <div class="lane ent">${blkEnt}${nowMark}</div>
+          <div class="lanelb">↩️ Devoluciones (${d.devoluciones.length})</div>
+          <div class="lane dev">${blkDev}</div>
+        </div>`;
+  } else if (rango === 'semana') {
+    const l0 = lunesDe(baseD);
+    const porDia = {}; d.entregas.forEach(a => { const k = isoDay(new Date(a.fecha_inicio)); porDia[k] = (porDia[k] || 0) + 1; });
+    const celdas = [];
+    for (let i = 0; i < 7; i++) {
+      const x = new Date(l0); x.setDate(l0.getDate() + i); const k = isoDay(x);
+      const n = porDia[k] || 0;
+      celdas.push(`<div class="wkcell ${n ? 'has' : ''} ${k === hoyISO ? 'today' : ''}">
+        <div class="wd">${x.toLocaleDateString('es-CL', { weekday: 'short' }).replace('.', '')}</div>
+        <div class="wn">${x.getDate()}</div>
+        <div class="wb">${n ? n + '📦' : ''}</div></div>`);
+    }
+    timelineTitulo = 'Línea de tiempo de la semana';
+    timelineHTML = `<div class="tl"><div class="wkgrid">${celdas.join('')}</div></div>`;
+  } else {
+    const y = baseD.getFullYear(), m = baseD.getMonth();
+    const primero = new Date(y, m, 1), ultimo = new Date(y, m + 1, 0);
+    const semanas = []; let cur = lunesDe(primero);
+    while (cur <= ultimo) {
+      const ini = new Date(cur), fin = new Date(cur); fin.setDate(fin.getDate() + 6);
+      const n = d.entregas.filter(a => { const dd = new Date(a.fecha_inicio); return dd >= ini && dd <= new Date(fin.getFullYear(), fin.getMonth(), fin.getDate(), 23, 59, 59); }).length;
+      const cur2 = (hoyISO >= isoDay(ini) && hoyISO <= isoDay(fin));
+      semanas.push(`<div class="mwk ${n ? 'has' : ''} ${cur2 ? 'cur' : ''}">
+        <span class="ml">${ini.getDate()} ${ini.toLocaleDateString('es-CL',{month:'short'}).replace('.','')} – ${fin.getDate()} ${fin.toLocaleDateString('es-CL',{month:'short'}).replace('.','')}</span>
+        <span class="mn">${n} entrega${n===1?'':'s'}</span></div>`);
+      cur = new Date(cur); cur.setDate(cur.getDate() + 7);
+    }
+    timelineTitulo = 'Línea de tiempo del mes (por semanas)';
+    timelineHTML = `<div class="tl">${semanas.join('')}</div>`;
+  }
 
   const maxProg = Math.max(d.prog_hoy, d.prog_semana, d.prog_mes, 1);
   const prog = (lb, n) => `<div class="prog"><div class="t"><span>📅 ${lb}</span><b>${n} entregas</b></div><div class="track"><div class="fill" style="width:${Math.round(n / maxProg * 100)}%"></div></div></div>`;
@@ -489,7 +550,10 @@ async function viewInventarioDash(rango = 'hoy', modo = 'programadas') {
       <div><h1>Control de Inventario</h1><p>Gestión operativa de equipos, reservas y entregas del pañol</p></div>
       <div style="text-align:right">
         <div class="segs"><button data-r="hoy" class="${rango === 'hoy' ? 'on' : ''}">Hoy</button><button data-r="semana" class="${rango === 'semana' ? 'on' : ''}">Esta semana</button><button data-r="mes" class="${rango === 'mes' ? 'on' : ''}">Este mes</button></div>
-        <div class="datert">📅 ${cap(fmtFechaLarga(new Date()))}</div>
+        ${rango === 'hoy'
+          ? `<div class="datert">📅 ${cap(fmtFechaLarga(new Date()))}</div>`
+          : `<div style="margin-top:8px"><label style="font-size:11px;color:#6b7280;display:block;margin-bottom:2px">${rango === 'semana' ? '🗓️ Ver la semana de:' : '🗓️ Ver el mes de:'}</label>
+             <input type="date" class="refpick" id="refPick" value="${isoDay(baseD)}" style="margin-top:0"></div>`}
       </div>
     </div>
     <div class="kpis">
@@ -500,14 +564,8 @@ async function viewInventarioDash(rango = 'hoy', modo = 'programadas') {
     </div>
     <div class="cols2">
       <div class="pnl"><h3>Entregas programadas</h3>${prog('Hoy', d.prog_hoy)}${prog('Esta semana', d.prog_semana)}${prog('Este mes', d.prog_mes)}</div>
-      <div class="pnl"><h3>Línea de tiempo del día <span style="font-weight:500;color:#6b7280;font-size:13px">(Entregas y devoluciones)</span></h3>
-        <div class="tl">
-          <div class="axis">${ejes.map(e => `<span>${e}</span>`).join('')}</div>
-          <div class="lanelb">📦 Entregas (${d.tl_entregas.length})</div>
-          <div class="lane ent">${blkEnt}${nowMark}</div>
-          <div class="lanelb">↩️ Devoluciones (${d.devoluciones.length})</div>
-          <div class="lane dev">${blkDev}</div>
-        </div>
+      <div class="pnl"><h3>${timelineTitulo} <span style="font-weight:500;color:#6b7280;font-size:13px">(${rango === 'hoy' ? 'Entregas y devoluciones' : 'Entregas programadas'})</span></h3>
+        ${timelineHTML}
       </div>
     </div>
     <div class="filt">
@@ -550,8 +608,9 @@ async function viewInventarioDash(rango = 'hoy', modo = 'programadas') {
       filas.sort((x, y) => new Date(x.hora) - new Date(y.hora));
     }
     const lista = filas.filter(f => !q || (f.estudiante + ' ' + f.asignatura + ' ' + f.item).toLowerCase().includes(q));
+    const colFecha = modo === 'devoluciones' ? 'Fecha devolución ↕' : 'Fecha de entrega ↕';
     $('#invTblWrap').innerHTML = `<div class="tbh"><h3>📦 ${tit} (${lista.length})</h3></div>
-      <table><thead><tr><th>Hora ↕</th><th>Estudiante ↕</th><th>Asignatura ↕</th><th>Equipo o Kit ↕</th><th>Cantidad ↕</th><th>Estado ↕</th><th>Acciones</th></tr></thead>
+      <div style="overflow-x:auto"><table><thead><tr><th>${colFecha}</th><th>Hora ↕</th><th>Estudiante ↕</th><th>Asignatura ↕</th><th>Equipo o Kit ↕</th><th>Cantidad ↕</th><th>Estado ↕</th><th>Acciones</th></tr></thead>
       <tbody>${lista.length ? lista.map((f, i) => {
         const st = f.tipo === 'devolucion' ? '<span class="st dev">↩️ Devolución esperada</span>'
           : f.tipo === 'confirmada' ? '<span class="st conf">✅ Entregada</span>'
@@ -559,17 +618,20 @@ async function viewInventarioDash(rango = 'hoy', modo = 'programadas') {
         const acc = f.tipo === 'devolucion' ? `<button class="ab pri rec" data-i="${i}">Recepcionar</button>`
           : f.tipo === 'confirmada' ? ''
           : `<button class="ab pri ent" data-i="${i}">Entregar</button>`;
-        return `<tr><td>🕐 ${fmtHora(f.hora)}</td><td>${escD(f.estudiante)}</td><td>${escD(f.asignatura)}</td>
+        let fechaTxt = '—'; try { fechaTxt = new Date(f.hora).toLocaleDateString('es-CL', { weekday: 'short', day: '2-digit', month: '2-digit' }); } catch (e) {}
+        return `<tr><td style="white-space:nowrap"><span class="st pend" style="background:#eef4ff;color:#2563eb">📅 ${fechaTxt}</span></td><td style="white-space:nowrap">🕐 ${fmtHora(f.hora)}</td><td>${escD(f.estudiante)}</td><td>${escD(f.asignatura)}</td>
           <td><span class="itico">${icon(f.categoria || f.item)}</span>${escD(f.item)}${f.por_individualizar ? ' <span class="st pend" style="font-size:10px">por asignar</span>' : ''}</td>
           <td style="text-align:center">1</td><td>${st}</td>
           <td style="display:flex;gap:6px;align-items:center">${acc}<button class="dots">⋯</button></td></tr>`;
-      }).join('') : `<tr><td colspan="7" class="muted" style="padding:16px">No hay registros para ${rangoLabel[rango].toLowerCase()}.</td></tr>`}</tbody></table>`;
+      }).join('') : `<tr><td colspan="8" class="muted" style="padding:16px">No hay registros para ${rangoLabel[rango].toLowerCase()}.</td></tr>`}</tbody></table></div>`;
     $('#invTblWrap').querySelectorAll('.ent').forEach(b => b.onclick = () => modalEntregar(lista[Number(b.dataset.i)].ref));
     $('#invTblWrap').querySelectorAll('.rec').forEach(b => { const r = lista[Number(b.dataset.i)].ref; b.onclick = () => modalRecibir({ prestamo_id: r.id, equipo: r.equipo, codigo_qr: r.codigo_qr, n_serie: r.n_serie, marca: r.marca, modelo: r.modelo }); });
   };
 
-  // Tabs de rango → recarga con el rango.
-  $('#invDash').querySelectorAll('.segs button').forEach(b => b.onclick = () => viewInventarioDash(b.dataset.r, modo));
+  // Tabs de rango → recarga con el rango (semana/mes empiezan en la fecha actual).
+  $('#invDash').querySelectorAll('.segs button').forEach(b => b.onclick = () => viewInventarioDash(b.dataset.r, modo, null));
+  // Calendario: elegir la semana / el mes a filtrar.
+  const rp = $('#refPick'); if (rp) rp.onchange = () => { if (rp.value) viewInventarioDash(rango, modo, rp.value); };
   // KPIs como filtros del dashboard.
   $('#invDash').querySelectorAll('.kpi').forEach(c => c.onclick = () => {
     const m = c.dataset.modo; modo = (modo === m) ? 'programadas' : m;

@@ -707,13 +707,17 @@ app.get('/api/panol/dashboard', auth, requireRole(...OPERACION), wrap(async (req
   const prog_semana = await rng("date_trunc('week', current_date)", "date_trunc('week', current_date) + interval '7 day'");
   const prog_mes    = await rng("date_trunc('month', current_date)", "date_trunc('month', current_date) + interval '1 month'");
 
-  // Rango seleccionado (tabs Hoy / Esta semana / Este mes).
+  // Rango seleccionado (tabs Hoy / Esta semana / Este mes) y fecha de referencia
+  // elegida con el calendario (semana/mes que se quiere ver). Por defecto: hoy.
   const rango = ['semana', 'mes'].includes(req.query.rango) ? req.query.rango : 'hoy';
+  const ref = (req.query.ref && /^\d{4}-\d{2}-\d{2}$/.test(req.query.ref)) ? req.query.ref : null;
+  // $2 = fecha de referencia (null => current_date). Semana ISO (lunes) y mes calendario.
+  const RD = "COALESCE($2::date, current_date)";
   const cond = rango === 'semana'
-    ? "r.fecha_inicio >= date_trunc('week', current_date) AND r.fecha_inicio < date_trunc('week', current_date) + interval '7 day'"
+    ? `r.fecha_inicio >= date_trunc('week', ${RD}) AND r.fecha_inicio < date_trunc('week', ${RD}) + interval '7 day'`
     : rango === 'mes'
-    ? "r.fecha_inicio >= date_trunc('month', current_date) AND r.fecha_inicio < date_trunc('month', current_date) + interval '1 month'"
-    : "r.fecha_inicio::date = current_date";
+    ? `r.fecha_inicio >= date_trunc('month', ${RD}) AND r.fecha_inicio < date_trunc('month', ${RD}) + interval '1 month'`
+    : `r.fecha_inicio::date = ${RD}`;
 
   const entregasDe = async (whereRango) => {
     const rows = (await db.query(
@@ -729,7 +733,7 @@ app.get('/api/panol/dashboard', auth, requireRole(...OPERACION), wrap(async (req
        LEFT JOIN tarea t ON t.id=r.tarea_id
        LEFT JOIN asignatura ta ON ta.id=t.asignatura_id
        WHERE r.estado='confirmada' AND COALESCE(e.entidad_id,u.entidad_id)=$1 AND ${whereRango}
-       ORDER BY r.fecha_inicio`, [sede])).rows;
+       ORDER BY r.fecha_inicio`, [sede, ref])).rows;
     for (const row of rows) {
       if (row.por_individualizar && row.categoria_id) {
         row.unidades = (await db.query(
@@ -739,8 +743,7 @@ app.get('/api/panol/dashboard', auth, requireRole(...OPERACION), wrap(async (req
     }
     return rows;
   };
-  const entregas = await entregasDe(cond);                                   // según el rango (tabla / vista semana-mes)
-  const tl_entregas = rango === 'hoy' ? entregas : await entregasDe("r.fecha_inicio::date = current_date"); // línea de tiempo del día
+  const entregas = await entregasDe(cond);                                   // según el rango+ref (tabla / vista semana-mes / línea de tiempo)
 
   const devoluciones = (await db.query(
     `SELECT p.id, p.fecha_salida, r.fecha_fin AS esperada, u.nombre AS estudiante,
@@ -774,8 +777,8 @@ app.get('/api/panol/dashboard', auth, requireRole(...OPERACION), wrap(async (req
        ORDER BY disponibles, c.nombre`, [sede])).rows;
   } catch (e) { /* tolerante */ }
 
-  res.json({ rango, reservas_pendientes, entregas_hoy, devoluciones_hoy, alertas_stock,
-    prog_hoy, prog_semana, prog_mes, entregas, tl_entregas, devoluciones, entregadas_hoy, stock_bajo });
+  res.json({ rango, ref, reservas_pendientes, entregas_hoy, devoluciones_hoy, alertas_stock,
+    prog_hoy, prog_semana, prog_mes, entregas, devoluciones, entregadas_hoy, stock_bajo });
 }));
 
 // Historial de entregas (préstamos) de la sede.
