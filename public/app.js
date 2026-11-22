@@ -1321,12 +1321,10 @@ function responderSolic(id, estado) {
 
 // ===================== Calendario de disponibilidad =====================
 async function viewDisponibilidad() {
-  h(`<h2 class="page">Disponibilidad de equipos</h2>
-    <p class="muted">Consulta los periodos ya ocupados de un equipo antes de reservar.</p>
+  h(`<h2 class="page">Disponibilidad</h2>
+    <p class="muted">Disponibilidad por asignatura y categoría, considerando las reservas solicitadas (pendientes) y las confirmadas.</p>
     <div class="card" style="margin-bottom:14px">
-      ${(ME.sedes && ME.sedes.length > 1) ? `<div class="field"><label>Sede</label><select id="dSede">
-        <option value="">Sede activa</option><option value="todos">Todas las sedes</option></select></div>` : ''}
-      <div class="field"><label>Equipo</label><select id="dEq"><option value="">Cargando…</option></select></div>
+      <div class="field"><label>Asignatura</label><select id="dAsig"><option value="todos">Todas</option></select></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <div class="field" style="flex:1;min-width:140px"><label>Desde</label><input type="date" id="dDesde"></div>
         <div class="field" style="flex:1;min-width:140px"><label>Hasta</label><input type="date" id="dHasta"></div>
@@ -1338,41 +1336,40 @@ async function viewDisponibilidad() {
   const en3 = new Date(hoy.getTime() + 21 * 864e5);
   const iso = d => d.toISOString().slice(0, 10);
   $('#dDesde').value = iso(hoy); $('#dHasta').value = iso(en3);
-  const multi = !!(ME.sedes && ME.sedes.length > 1);
-  async function cargarEquipos() {
-    const todos = multi && $('#dSede') && $('#dSede').value === 'todos';
-    const eq = await api('/equipos' + (todos ? '?scope=todos' : ''));
-    if (!eq.length) { $('#dEq').innerHTML = '<option value="">No hay equipos disponibles para ti</option>'; return; }
-    $('#dEq').innerHTML = eq.map(e => `<option value="${e.id}">${escD(e.nombre)} · ${escD(e.codigo_qr)}${todos && e.sede ? ' · ' + escD(e.sede) : ''}</option>`).join('');
-    consultar();
-  }
-  if ($('#dSede')) $('#dSede').onchange = cargarEquipos;
+  let data = [];
+  const render = () => {
+    const sel = $('#dAsig').value;
+    const items = sel === 'todos' ? data : data.filter(x => String(x.asignatura.id) === sel);
+    if (!items.length) { $('#dRes').innerHTML = '<p class="muted">Sin asignaturas con equipamiento habilitado.</p>'; return; }
+    $('#dRes').innerHTML = items.map(x => {
+      const rows = x.categorias.length
+        ? x.categorias.map(c => `<tr>
+            <td><b>${escD(c.nombre)}</b></td>
+            <td style="text-align:center">${c.total}</td>
+            <td style="text-align:center">${c.confirmadas}</td>
+            <td style="text-align:center">${c.solicitadas}</td>
+            <td style="text-align:center"><span class="pill ${c.disponibles > 0 ? 'ok' : 'bad'}">${c.disponibles}</span></td>
+          </tr>`).join('')
+        : '<tr><td colspan="5" class="muted">Sin categorías habilitadas.</td></tr>';
+      return `<h3 style="margin:16px 0 8px;font-size:15px">${escD(x.asignatura.nombre)}${x.asignatura.seccion ? ' · ' + escD(x.asignatura.seccion) : ''}</h3>
+        <table style="width:100%"><thead><tr><th>Categoría</th><th>Total</th><th>Confirmadas</th><th>Solicitadas</th><th>Disponibles</th></tr></thead>
+        <tbody>${rows}</tbody></table>`;
+    }).join('');
+  };
   const consultar = async () => {
-    const id = $('#dEq').value; if (!id) return;
     $('#dRes').innerHTML = '<p class="muted">Consultando…</p>';
-    const q = `?desde=${$('#dDesde').value}&hasta=${$('#dHasta').value}`;
     try {
-      const data = await api(`/equipos/${id}/ocupacion${q}`);
-      const estado = data.equipo ? (ESTADO_EQ[data.equipo.estado] || [data.equipo.estado, 'info']) : null;
-      let html = `<div class="aviso ok" style="margin-bottom:12px">🕐 Horario de atención del pañol: <b>${escD(data.horario)}</b></div>`;
-      if (estado) html += `<p style="margin:0 0 10px">Estado actual del equipo: <span class="pill ${estado[1]}">${estado[0]}</span></p>`;
-      if (!data.reservas.length) {
-        html += '<div class="aviso ok">✅ Sin reservas en el rango seleccionado: el equipo está libre.</div>';
-      } else {
-        html += '<p class="muted" style="margin:0 0 8px">Periodos ocupados (no disponibles para reservar):</p>';
-        html += data.reservas.map(r => {
-          const [lab, cls] = ESTADO_RES[r.estado] || [r.estado, 'info'];
-          return `<div class="row"><div class="ava">📅</div><div class="info">
-            <b>${fmtDate(r.fecha_inicio)} → ${fmtDate(r.fecha_fin)}</b>
-            <small>${escD(r.usuario)}</small></div><span class="pill ${cls}">${lab}</span></div>`;
-        }).join('');
-      }
-      $('#dRes').innerHTML = html;
+      data = await api(`/disponibilidad?desde=${$('#dDesde').value}&hasta=${$('#dHasta').value}`);
+      const cur = $('#dAsig').value;
+      $('#dAsig').innerHTML = '<option value="todos">Todas</option>' +
+        data.map(x => `<option value="${x.asignatura.id}">${escD(x.asignatura.nombre)}${x.asignatura.seccion ? ' · ' + escD(x.asignatura.seccion) : ''}</option>`).join('');
+      if (cur && data.some(x => String(x.asignatura.id) === cur)) $('#dAsig').value = cur;
+      render();
     } catch (e) { $('#dRes').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; }
   };
+  $('#dAsig').onchange = render;
   $('#dBtn').onclick = consultar;
-  $('#dEq').onchange = consultar;
-  cargarEquipos();
+  consultar();
 }
 
 // ===================== Gestión completa de pedidos (admin/pañolero) =====================

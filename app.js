@@ -1836,6 +1836,64 @@ app.post('/api/solicitudes/:id/responder', auth, requireRole('docente', 'jefe_pa
 }));
 
 // ----------------------- Calendario de disponibilidad -----------------------
+// Disponibilidad agregada por asignatura y categoría (RF-11), considerando
+// reservas confirmadas y solicitudes pendientes que se solapan con el rango.
+app.get('/api/disponibilidad', auth, wrap(async (req, res) => {
+  const desde = req.query.desde ? new Date(req.query.desde) : new Date();
+  const hasta = req.query.hasta ? new Date(req.query.hasta + 'T23:59:59') : new Date(Date.now() + 21 * 864e5);
+  if (isNaN(desde) || isNaN(hasta)) return res.status(400).json({ error: 'Rango de fechas inválido' });
+
+  const rol = req.user.rol;
+  let asigs;
+  if (rol === 'alumno' || rol === 'docente') {
+    asigs = (await db.query(
+      `SELECT a.id, a.nombre, a.seccion FROM usuario_asignatura ua
+         JOIN asignatura a ON a.id=ua.asignatura_id JOIN carrera c ON c.id=a.carrera_id
+       WHERE ua.usuario_rut=$1 AND c.entidad_id=$2 ORDER BY a.nombre, a.seccion`, [req.user.rut, req.sede])).rows;
+  } else {
+    asigs = (await db.query(
+      `SELECT a.id, a.nombre, a.seccion FROM asignatura a JOIN carrera c ON c.id=a.carrera_id
+       WHERE c.entidad_id=$1 ORDER BY a.nombre, a.seccion`, [req.sede])).rows;
+  }
+
+  const out = [];
+  for (const a of asigs) {
+    const cats = (await db.query(
+      `SELECT c.id, c.nombre,
+         (SELECT count(*)::int FROM equipo e WHERE e.categoria_id=c.id AND e.entidad_id=$2 AND e.estado<>'baja') AS total,
+         (SELECT count(*)::int FROM equipo e WHERE e.categoria_id=c.id AND e.entidad_id=$2 AND e.estado='mantencion') AS en_mantencion
+       FROM categoria c
+       WHERE c.id IN (SELECT categoria_id FROM elegibilidad WHERE asignatura_id=$1)
+       ORDER BY c.nombre`, [a.id, req.sede])).rows;
+    for (const cc of cats) {
+      // Reservas confirmadas / en uso que consumen una unidad de la categoría y se solapan.
+      cc.confirmadas = (await db.query(
+        `SELECT count(*)::int n FROM reserva r
+           LEFT JOIN equipo e ON e.id=r.equipo_id
+           JOIN usuario u ON u.rut=r.usuario_rut
+         WHERE r.estado IN ('confirmada','en_uso')
+           AND COALESCE(r.categoria_id, e.categoria_id)=$1
+           AND COALESCE(e.entidad_id, u.entidad_id)=$2
+           AND r.fecha_fin > $3 AND r.fecha_inicio < $4`, [cc.id, req.sede, desde, hasta])).rows[0].n;
+      // Solicitudes especiales PENDIENTES que incluyen la categoría y se solapan.
+      let sol = 0;
+      try {
+        sol = (await db.query(
+          `SELECT count(*)::int n FROM solicitud_categoria sc
+             JOIN solicitud_especial s ON s.id=sc.solicitud_id
+             JOIN usuario u ON u.rut=s.usuario_rut
+           WHERE sc.categoria_id=$1 AND s.estado='pendiente' AND u.entidad_id=$2
+             AND (s.fecha_inicio IS NULL OR (s.fecha_fin > $3 AND s.fecha_inicio < $4))`,
+          [cc.id, req.sede, desde, hasta])).rows[0].n;
+      } catch (e) { if (e.code !== '42P01' && e.code !== '42703') throw e; } // migración 18 sin aplicar
+      cc.solicitadas = sol;
+      cc.disponibles = Math.max(0, cc.total - cc.en_mantencion - cc.confirmadas);
+    }
+    out.push({ asignatura: a, categorias: cats });
+  }
+  res.json(out);
+}));
+
 app.get('/api/equipos/:id/ocupacion', auth, wrap(async (req, res) => {
   const desde = req.query.desde ? new Date(req.query.desde) : new Date();
   const hasta = req.query.hasta ? new Date(req.query.hasta) : new Date(Date.now() + 21 * 864e5);
