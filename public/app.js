@@ -1289,6 +1289,7 @@ function solicitudForm() {
     $('#sE').textContent = '';
     const descripcion = $('#sDesc').value.trim();
     if (!descripcion) { $('#sE').textContent = 'Escribe la descripción'; return; }
+    if (!solicitados.length) { $('#sE').textContent = 'Debe seleccionar al menos una categoría'; return; }
     const asignatura_id = $('#sAsig').value ? Number($('#sAsig').value) : null;
     const fi = $('#sFi').value, hi = $('#sHi').value, ff = $('#sFf').value, hf = $('#sHf').value;
     const fecha_inicio = (fi && hi) ? new Date(fi + 'T' + hi).toISOString() : null;

@@ -1605,6 +1605,9 @@ app.get('/api/asignaturas/:id/categorias', auth, wrap(async (req, res) => {
 app.post('/api/solicitudes', auth, wrap(async (req, res) => {
   const { asignatura_id, descripcion, fecha_inicio, fecha_fin, duracion, equipos, categorias } = req.body || {};
   if (!descripcion || !descripcion.trim()) return res.status(400).json({ error: 'La descripción es obligatoria' });
+  const catsReq = Array.isArray(categorias) ? categorias.map(Number).filter(Boolean) : [];
+  const eqReq = Array.isArray(equipos) ? equipos.map(Number).filter(Boolean) : [];
+  if (!catsReq.length && !eqReq.length) return res.status(400).json({ error: 'Debe seleccionar al menos una categoría' });
 
   // Sede de la solicitud = sede del solicitante. Política del flujo excepcional por sede.
   const su = (await db.query(`SELECT entidad_id FROM usuario WHERE rut=$1`, [req.user.rut])).rows[0];

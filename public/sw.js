@@ -7,7 +7,7 @@
 //    manifest, íconos) = caché primero. La API (/api/*) siempre a la red.
 //  Sube la versión del caché al cambiar archivos del shell para refrescar.
 // =====================================================================
-const CACHE = 'panol2-v29';
+const CACHE = 'panol2-v30';
 const SHELL = [
   '/', '/index.html', '/reset.html',
   '/styles.css', '/app.js',
