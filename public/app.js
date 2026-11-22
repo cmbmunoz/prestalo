@@ -399,65 +399,379 @@ function unidadLinea(x) {
 }
 function fmtHora(dt) { try { return new Date(dt).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } }
 
-// ===================== Control de Inventario (dashboard operativo) =====================
+// ===================== Control de Inventario (dashboard operativo, maqueta) =====================
+const INVDASH_CSS = `
+.invd{--b:#2563eb;--b2:#eff4ff;--g:#16a34a;--g2:#eafaf0;--p:#7c3aed;--p2:#f3eefe;--r:#dc2626;--r2:#fdeeee;color:#1f2937}
+.invd .ihead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.invd .ihead h1{font-size:26px;font-weight:800;margin:0;color:#111827}
+.invd .ihead p{margin:3px 0 0;color:#6b7280;font-size:13.5px}
+.invd .segs{display:flex;background:#eef1f5;border-radius:10px;padding:3px}
+.invd .segs button{border:0;background:transparent;padding:7px 14px;border-radius:8px;font-weight:600;font-size:13px;color:#4b5563;cursor:pointer}
+.invd .segs button.on{background:var(--b);color:#fff}
+.invd .datert{color:#374151;font-size:13px;display:flex;align-items:center;gap:6px;margin-top:8px}
+.invd .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
+@media(max-width:900px){.invd .kpis{grid-template-columns:repeat(2,1fr)}}
+.invd .kpi{border-radius:14px;padding:16px;display:flex;gap:12px;align-items:flex-start;position:relative;border:1px solid #eceff3}
+.invd .kpi .ico{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:20px;flex:0 0 auto}
+.invd .kpi .lb{font-size:12.5px;color:#4b5563;font-weight:600}
+.invd .kpi .vl{font-size:30px;font-weight:800;line-height:1.05;margin:2px 0}
+.invd .kpi .sb{font-size:11.5px;color:#6b7280}
+.invd .kpi .chev{position:absolute;right:12px;top:14px;color:#9aa3af;font-size:16px}
+.invd .kpi.b{background:var(--b2)}.invd .kpi.b .ico{background:#dbe6ff;color:var(--b)}
+.invd .kpi.g{background:var(--g2)}.invd .kpi.g .ico{background:#d4f3df;color:var(--g)}
+.invd .kpi.p{background:var(--p2)}.invd .kpi.p .ico{background:#e7ddfb;color:var(--p)}
+.invd .kpi.r{background:var(--r2)}.invd .kpi.r .ico{background:#fbdcdc;color:var(--r)}
+.invd .cols2{display:grid;grid-template-columns:1fr 1.6fr;gap:14px;margin-bottom:16px}
+@media(max-width:900px){.invd .cols2{grid-template-columns:1fr}}
+.invd .pnl{background:#fff;border:1px solid #eceff3;border-radius:14px;padding:16px}
+.invd .pnl h3{margin:0 0 12px;font-size:16px;font-weight:700;color:#111827}
+.invd .prog{margin:12px 0}
+.invd .prog .t{display:flex;justify-content:space-between;font-size:13px;color:#374151;margin-bottom:5px}
+.invd .prog .track{height:9px;background:#eef1f5;border-radius:6px;overflow:hidden}
+.invd .prog .fill{height:100%;background:linear-gradient(90deg,#2563eb,#16a34a);border-radius:6px}
+.invd .tl{position:relative;padding-left:4px}
+.invd .tl .axis{display:flex;justify-content:space-between;font-size:10.5px;color:#9aa3af;margin-bottom:6px}
+.invd .tl .lane{position:relative;height:30px;background:#f6f8fb;border-radius:8px;margin:6px 0}
+.invd .tl .lane .blk{position:absolute;top:5px;height:20px;border-radius:5px;opacity:.9}
+.invd .tl .lane.ent .blk{background:#2563eb}.invd .tl .lane.dev .blk{background:#16a34a}
+.invd .tl .lanelb{font-size:12px;color:#4b5563;font-weight:600;display:flex;align-items:center;gap:6px;margin-top:8px}
+.invd .tl .now{position:absolute;top:16px;bottom:4px;width:2px;background:var(--b);z-index:3}
+.invd .tl .now .pin{position:absolute;top:-16px;left:50%;transform:translateX(-50%);background:var(--b);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:9px;white-space:nowrap}
+.invd .filt{background:#fff;border:1px solid #eceff3;border-radius:14px;padding:14px 16px;display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px}
+.invd .filt .ft{display:flex;align-items:center;gap:8px;color:#374151;font-weight:600;font-size:13px}
+.invd .filt .fg{display:flex;flex-direction:column;gap:3px;min-width:150px}
+.invd .filt .fg label{font-size:11px;color:#6b7280}
+.invd .filt select{border:1px solid #d7dce3;border-radius:9px;padding:8px 10px;font-size:13px;background:#fff}
+.invd .filt a{margin-left:auto;color:var(--b);font-size:13px;font-weight:600;cursor:pointer;text-decoration:none}
+.invd .tbl{background:#fff;border:1px solid #eceff3;border-radius:14px;padding:16px}
+.invd .tbl .tbh{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.invd .tbl .tbh h3{margin:0;font-size:16px;font-weight:700}
+.invd .tbl .srch{border:1px solid #d7dce3;border-radius:10px;padding:8px 12px;font-size:13px;min-width:260px}
+.invd table{width:100%;border-collapse:collapse}
+.invd thead th{text-align:left;font-size:11.5px;color:#6b7280;font-weight:600;padding:8px 10px;border-bottom:1px solid #eef1f5;white-space:nowrap}
+.invd tbody td{padding:11px 10px;border-bottom:1px solid #f3f5f8;font-size:13.5px;color:#1f2937;vertical-align:middle}
+.invd .st{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600}
+.invd .st.pend{background:#eef4ff;color:#2563eb}.invd .st.conf{background:#eafaf0;color:#16a34a}
+.invd .st.prep{background:#fff5e6;color:#b45309}.invd .st.dev{background:#f3eefe;color:#7c3aed}
+.invd .ab{border:0;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:600;cursor:pointer}
+.invd .ab.pri{background:var(--b);color:#fff}.invd .ab.out{background:#fff;border:1px solid #d7dce3;color:#374151}
+.invd .dots{border:0;background:transparent;color:#9aa3af;font-size:16px;cursor:pointer;padding:4px 8px}
+.invd .itico{width:26px;height:26px;border-radius:7px;background:#eef1f5;display:inline-flex;align-items:center;justify-content:center;margin-right:7px;vertical-align:middle}
+`;
+function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+function fmtFechaLarga(d) {
+  try { return 'Hoy, ' + d.toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' }); } catch (e) { return ''; }
+}
 async function viewInventarioDash() {
-  h(`<h2 class="page">Control de Inventario</h2>
-     <p class="muted">Gestión operativa de equipos, reservas y entregas del pañol.</p>
-     <div id="invDash">Cargando…</div>`);
+  h(`<div class="invd"><style>${INVDASH_CSS}</style><div id="invDash">Cargando…</div></div>`);
   let d;
   try { d = await api('/panol/dashboard'); } catch (e) { $('#invDash').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
-  const kpi = (ic, label, val, sub) => `<div class="card" style="flex:1;min-width:190px">
-    <div style="font-size:12px;color:var(--muted);font-weight:600">${ic} ${label}</div>
-    <div style="font-size:30px;font-weight:800;margin:4px 0">${val}</div>
-    <div style="font-size:11.5px;color:var(--muted)">${sub}</div></div>`;
+
+  // Filas unificadas: entregas (pendientes) + devoluciones (esperadas).
+  const filas = [
+    ...d.entregas.map(a => ({ tipo: 'entrega', hora: a.fecha_inicio, estudiante: a.estudiante, asignatura: a.asignatura, item: a.item, por_individualizar: a.por_individualizar, ref: a })),
+    ...d.devoluciones.map(p => ({ tipo: 'devolucion', hora: p.esperada || p.fecha_salida, estudiante: p.estudiante, asignatura: '—', item: p.equipo, ref: p })),
+  ].sort((x, y) => new Date(x.hora) - new Date(y.hora));
+
+  // Línea de tiempo 08:00–19:00.
+  const AX0 = 8, AX1 = 19, SPAN = AX1 - AX0;
+  const pos = t => { const dt = new Date(t); const hh = dt.getHours() + dt.getMinutes() / 60; return Math.max(0, Math.min(100, (hh - AX0) / SPAN * 100)); };
+  const ejes = []; for (let hgt = AX0; hgt <= AX1; hgt++) ejes.push(('0' + hgt).slice(-2) + ':00');
+  const blkEnt = d.entregas.map(a => { const l = pos(a.fecha_inicio); const r = pos(a.fecha_fin || a.fecha_inicio); const w = Math.max(3, r - l); return `<div class="blk" style="left:${l}%;width:${w}%" title="${escD(a.estudiante)} · ${fmtHora(a.fecha_inicio)}"></div>`; }).join('');
+  const blkDev = d.devoluciones.map(p => { const l = pos(p.esperada || p.fecha_salida); return `<div class="blk" style="left:${l}%;width:4%" title="${escD(p.estudiante)}"></div>`; }).join('');
+  const nowD = new Date(); const nowH = nowD.getHours() + nowD.getMinutes() / 60;
+  const nowMark = (nowH >= AX0 && nowH <= AX1) ? `<div class="now" style="left:${pos(nowD)}%"><span class="pin">${fmtHora(nowD)}</span></div>` : '';
+
   const maxProg = Math.max(d.prog_hoy, d.prog_semana, d.prog_mes, 1);
-  const bar = (label, n) => `<div style="margin:8px 0"><div style="display:flex;justify-content:space-between;font-size:12.5px"><span>📅 ${label}</span><b>${n} entregas</b></div>
-    <div style="height:7px;background:#eef1f0;border-radius:6px;overflow:hidden;margin-top:3px"><div style="height:100%;width:${Math.round(n / maxProg * 100)}%;background:var(--brand,#0E8F86)"></div></div></div>`;
-  const rows = d.entregas.length
-    ? d.entregas.map((a, i) => `<tr>
-        <td>🕐 ${fmtHora(a.fecha_inicio)}</td>
-        <td>${escD(a.estudiante)}</td>
-        <td>${escD(a.asignatura)}</td>
-        <td>${escD(a.item)}${a.por_individualizar ? ' <span class="pill info" style="font-size:10px">por asignar</span>' : ''}</td>
-        <td style="text-align:center">1</td>
-        <td><span class="pill warn">Pendiente</span></td>
-        <td><button class="btn sm ent" data-i="${i}">Entregar</button></td></tr>`).join('')
-    : '<tr><td colspan="7" class="muted">No hay entregas programadas para hoy.</td></tr>';
+  const prog = (lb, n) => `<div class="prog"><div class="t"><span>📅 ${lb}</span><b>${n} entregas</b></div><div class="track"><div class="fill" style="width:${Math.round(n / maxProg * 100)}%"></div></div></div>`;
+  const kpi = (cls, ic, lb, vl, sb) => `<div class="kpi ${cls}"><div class="ico">${ic}</div><div><div class="lb">${lb}</div><div class="vl">${vl}</div><div class="sb">${sb}</div></div><span class="chev">›</span></div>`;
+
   $('#invDash').innerHTML = `
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-      ${kpi('📅', 'Reservas pendientes', d.reservas_pendientes, 'Por preparar y entregar')}
-      ${kpi('✅', 'Entregas confirmadas', d.entregas_hoy, 'Entregadas hoy')}
-      ${kpi('📦', 'Devoluciones esperadas', d.devoluciones_hoy, 'Programadas para hoy')}
-      ${kpi('⚠️', 'Alertas de stock', d.alertas_stock, 'Equipos con stock bajo')}
+    <div class="ihead">
+      <div><h1>Control de Inventario</h1><p>Gestión operativa de equipos, reservas y entregas del pañol</p></div>
+      <div style="text-align:right">
+        <div class="segs"><button class="on">Hoy</button><button>Esta semana</button><button>Este mes</button></div>
+        <div class="datert">📅 ${cap(fmtFechaLarga(new Date()))}</div>
+      </div>
     </div>
-    <div class="panel"><h3>Entregas programadas</h3>${bar('Hoy', d.prog_hoy)}${bar('Esta semana', d.prog_semana)}${bar('Este mes', d.prog_mes)}</div>
-    <div class="panel" style="margin-top:14px"><h3>Entregas programadas – Hoy (${d.entregas.length})</h3>
-      <table style="width:100%"><thead><tr><th>Hora</th><th>Estudiante</th><th>Asignatura</th><th>Equipo o Kit</th><th>Cant.</th><th>Estado</th><th>Acciones</th></tr></thead>
-      <tbody id="invRows">${rows}</tbody></table></div>`;
-  $('#invRows').querySelectorAll('.ent').forEach(b => b.onclick = () => modalEntregar(d.entregas[Number(b.dataset.i)]));
+    <div class="kpis">
+      ${kpi('b', '📅', 'Reservas pendientes', d.reservas_pendientes, 'Por preparar y entregar')}
+      ${kpi('g', '✅', 'Entregas confirmadas', d.entregas_hoy, 'Entregadas hoy')}
+      ${kpi('p', '📦', 'Devoluciones esperadas', d.devoluciones_hoy, 'Programadas para hoy')}
+      ${kpi('r', '⚠️', 'Alertas de stock', d.alertas_stock, 'Equipos con stock bajo')}
+    </div>
+    <div class="cols2">
+      <div class="pnl"><h3>Entregas programadas</h3>${prog('Hoy', d.prog_hoy)}${prog('Esta semana', d.prog_semana)}${prog('Este mes', d.prog_mes)}</div>
+      <div class="pnl"><h3>Línea de tiempo del día <span style="font-weight:500;color:#6b7280;font-size:13px">(Entregas y devoluciones)</span></h3>
+        <div class="tl">
+          <div class="axis">${ejes.map(e => `<span>${e}</span>`).join('')}</div>
+          <div class="lanelb">📦 Entregas (${d.entregas.length})</div>
+          <div class="lane ent">${blkEnt}${nowMark}</div>
+          <div class="lanelb">↩️ Devoluciones (${d.devoluciones.length})</div>
+          <div class="lane dev">${blkDev}</div>
+        </div>
+      </div>
+    </div>
+    <div class="filt">
+      <div class="ft">🔽 Filtros</div>
+      <div class="fg"><label>Sede</label><select id="fSede"><option>${escD((ME.sedes && (ME.sedes.find(s => s.id === SEDE) || {}).nombre) || 'Sede activa')}</option></select></div>
+      <div class="fg"><label>Estado</label><select id="fEstado"><option value="">Todos</option><option value="entrega">Pendiente</option><option value="devolucion">Devolución esperada</option></select></div>
+      <div class="fg"><label>Responsable</label><select id="fResp"><option value="">Todos</option></select></div>
+      <div class="fg"><label>Tipo de equipo</label><select id="fTipo"><option value="">Todos</option></select></div>
+      <a id="fClear">Limpiar filtros</a>
+    </div>
+    <div class="tbl">
+      <div class="tbh"><h3>📦 Entregas programadas – Hoy (<span id="tCount">${filas.length}</span>)</h3>
+        <input class="srch" id="tSrch" placeholder="Buscar por estudiante, asignatura o equipo…"></div>
+      <table><thead><tr>
+        <th>Hora ↕</th><th>Estudiante ↕</th><th>Asignatura ↕</th><th>Equipo o Kit ↕</th><th>Cantidad ↕</th><th>Estado ↕</th><th>Acciones</th>
+      </tr></thead><tbody id="invRows"></tbody></table>
+    </div>`;
+
+  const pintarTabla = () => {
+    const q = ($('#tSrch').value || '').toLowerCase();
+    const fe = $('#fEstado').value;
+    const lista = filas.filter(f =>
+      (!fe || f.tipo === fe) &&
+      (!q || (f.estudiante + ' ' + f.asignatura + ' ' + f.item).toLowerCase().includes(q)));
+    $('#tCount').textContent = lista.length;
+    $('#invRows').innerHTML = lista.length ? lista.map((f, i) => {
+      const st = f.tipo === 'devolucion'
+        ? '<span class="st dev">↩️ Devolución esperada</span>'
+        : '<span class="st pend">📅 Pendiente</span>';
+      const acc = f.tipo === 'devolucion'
+        ? `<button class="ab pri rec" data-i="${i}">Recepcionar</button>`
+        : `<button class="ab pri ent" data-i="${i}">Entregar</button>`;
+      return `<tr>
+        <td>🕐 ${fmtHora(f.hora)}</td>
+        <td>${escD(f.estudiante)}</td>
+        <td>${escD(f.asignatura)}</td>
+        <td><span class="itico">${icon(f.ref.categoria || f.item)}</span>${escD(f.item)}${f.por_individualizar ? ' <span class="st pend" style="font-size:10px">por asignar</span>' : ''}</td>
+        <td style="text-align:center">1</td>
+        <td>${st}</td>
+        <td style="display:flex;gap:6px;align-items:center">${acc}<button class="dots">⋯</button></td></tr>`;
+    }).join('') : '<tr><td colspan="7" class="muted" style="padding:16px">No hay entregas ni devoluciones para hoy.</td></tr>';
+    // wiring
+    $('#invRows').querySelectorAll('.ent').forEach((b, i) => b.onclick = () => modalEntregar(visibles()[Number(b.dataset.i)].ref));
+    $('#invRows').querySelectorAll('.rec').forEach((b, i) => b.onclick = () => modalRecibir({ prestamo_id: visibles()[Number(b.dataset.i)].ref.id, equipo: visibles()[Number(b.dataset.i)].ref.equipo, codigo_qr: visibles()[Number(b.dataset.i)].ref.codigo_qr, n_serie: visibles()[Number(b.dataset.i)].ref.n_serie, marca: visibles()[Number(b.dataset.i)].ref.marca, modelo: visibles()[Number(b.dataset.i)].ref.modelo }));
+    function visibles() {
+      const q2 = ($('#tSrch').value || '').toLowerCase(); const fe2 = $('#fEstado').value;
+      return filas.filter(f => (!fe2 || f.tipo === fe2) && (!q2 || (f.estudiante + ' ' + f.asignatura + ' ' + f.item).toLowerCase().includes(q2)));
+    }
+  };
+  $('#tSrch').oninput = pintarTabla;
+  $('#fEstado').onchange = pintarTabla;
+  $('#fClear').onclick = () => { $('#tSrch').value = ''; $('#fEstado').value = ''; pintarTabla(); };
+  pintarTabla();
 }
 
-// ===================== Planificación y Ejecución de Entregas =====================
-async function viewEntregasPlan() {
-  h(`<h2 class="page">Planificación y Ejecución de Entregas</h2>
-     <p class="muted">Gestiona las entregas programadas, confirma retiros y controla el estado de las reservas.</p>
-     <div id="epWrap">Cargando…</div>`);
-  let ag;
-  try { ag = await api('/agenda'); } catch (e) { $('#epWrap').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
-  const now = Date.now();
-  const atrasadas = ag.filter(a => new Date(a.fecha_inicio).getTime() < now).length;
-  const sinUnidad = ag.filter(a => a.por_individualizar && (!a.unidades || !a.unidades.length)).length;
-  const alertas = `<div class="panel"><h3>⚠️ Alertas operativas</h3>
-    <div class="row"><div class="info"><b>Entregas atrasadas</b><small>No retiradas en el horario programado.</small></div><span class="pill ${atrasadas ? 'bad' : 'ok'}">${atrasadas}</span></div>
-    <div class="row"><div class="info"><b>Equipos sin disponibilidad</b><small>Reservas por categoría sin unidades para asignar.</small></div><span class="pill ${sinUnidad ? 'warn' : 'ok'}">${sinUnidad}</span></div></div>`;
-  const lista = ag.length
-    ? ag.map((a, i) => `<div class="row">
-        <div class="ava">${icon(a.categoria)}</div>
-        <div class="info"><b>${escD(a.por_individualizar ? a.categoria : a.equipo)}</b><small>${escD(a.usuario)} · ${fmtDate(a.fecha_inicio)} → ${fmtDate(a.fecha_fin)}${a.por_individualizar ? ` · ${(a.unidades ? a.unidades.length : 0)} unidad(es) disp.` : ''}</small></div>
-        <button class="btn sm ent" data-i="${i}">Entregar</button></div>`).join('')
-    : '<p class="muted">No hay entregas programadas.</p>';
-  $('#epWrap').innerHTML = `${alertas}<div class="panel" style="margin-top:14px"><h3>Entregas programadas (${ag.length})</h3>${lista}</div>`;
-  $('#epWrap').querySelectorAll('.ent').forEach(b => b.onclick = () => modalEntregar(ag[Number(b.dataset.i)]));
+// ===================== Planificación y Ejecución de Entregas (maqueta) =====================
+const ENTP_CSS = `
+.entp{color:#1f2937}
+.entp .ehead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.entp .ehead .ti{display:flex;gap:12px;align-items:flex-start}
+.entp .ehead .tk{width:44px;height:44px;border-radius:12px;background:#eef4ff;color:#2563eb;display:flex;align-items:center;justify-content:center;font-size:22px;flex:0 0 auto}
+.entp .ehead h1{margin:0;font-size:23px;font-weight:800;font-style:italic;color:#111827}
+.entp .ehead p{margin:3px 0 0;color:#6b7280;font-size:13px}
+.entp .ehead .btns{display:flex;gap:8px}
+.entp .b{border:0;border-radius:10px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer}
+.entp .b.gh{background:#fff;border:1px solid #d7dce3;color:#374151}
+.entp .b.pri{background:#2563eb;color:#fff}
+.entp .grid3{display:grid;grid-template-columns:300px 1fr 360px;gap:14px;align-items:start}
+@media(max-width:1200px){.entp .grid3{grid-template-columns:1fr}}
+.entp .pnl{background:#fff;border:1px solid #eceff3;border-radius:14px;padding:14px}
+.entp .pnl h3{margin:0 0 10px;font-size:14.5px;font-weight:700}
+.entp .alert{display:flex;gap:10px;align-items:flex-start;border-radius:11px;padding:11px;margin-bottom:9px;cursor:default}
+.entp .alert .n{margin-left:auto;font-weight:800}
+.entp .alert.r{background:#fdeeee}.entp .alert.o{background:#fff5e6}.entp .alert.y{background:#fffbe6}.entp .alert.p{background:#f3eefe}
+.entp .alert b{font-size:13px}.entp .alert small{display:block;color:#6b7280;font-size:11.5px}
+.entp .nextit{display:flex;gap:10px;align-items:center;padding:9px 6px;border-bottom:1px solid #f3f5f8;cursor:pointer;border-radius:8px}
+.entp .nextit:hover{background:#f6f8fb}
+.entp .nextit .hr{font-weight:700;font-size:12.5px;color:#374151;width:42px;flex:0 0 auto}
+.entp .nextit .bd b{font-size:12.5px}.entp .nextit .bd small{display:block;color:#6b7280;font-size:11px}
+.entp .badge{margin-left:auto;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px}
+.entp .badge.prep{background:#fff5e6;color:#b45309}.entp .badge.conf{background:#eafaf0;color:#16a34a}.entp .badge.atr{background:#fdeeee;color:#dc2626}
+.entp .seg{display:flex;background:#eef1f5;border-radius:9px;padding:3px}
+.entp .seg button{border:0;background:transparent;padding:6px 14px;border-radius:7px;font-weight:600;font-size:12.5px;color:#4b5563;cursor:pointer}
+.entp .seg button.on{background:#2563eb;color:#fff}
+.entp .cal .caltop{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.entp .cal .nav{display:flex;align-items:center;gap:10px;font-weight:700;font-size:13.5px}
+.entp .cal .nav button{border:1px solid #d7dce3;background:#fff;border-radius:8px;padding:4px 9px;cursor:pointer}
+.entp .vt{position:relative;border-top:1px solid #eef1f5;height:560px}
+.entp .vt .hr{position:absolute;left:0;right:0;border-top:1px dashed #eef1f5;font-size:10.5px;color:#9aa3af;padding-left:2px}
+.entp .vt .ev{position:absolute;left:62px;right:12px;border-radius:9px;padding:9px 11px;color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08);overflow:hidden;cursor:pointer;border-left:4px solid rgba(255,255,255,.6)}
+.entp .vt .ev .t1{display:flex;justify-content:space-between;font-size:12px;font-weight:700}
+.entp .vt .ev .t2{font-size:11.5px;opacity:.95}
+.entp .vt .ev .bg{position:absolute;right:9px;bottom:7px;font-size:10px;font-weight:700;background:rgba(255,255,255,.25);padding:1px 7px;border-radius:999px}
+.entp .vt .ev.sel{outline:3px solid #2563eb;outline-offset:1px}
+.entp .vt .nowl{position:absolute;left:0;right:0;height:2px;background:#2563eb;z-index:4}
+.entp .vt .nowl .lb{position:absolute;left:0;top:-9px;background:#2563eb;color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:9px}
+.entp .chips{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:12px}
+@media(max-width:620px){.entp .chips{grid-template-columns:repeat(2,1fr)}}
+.entp .chip{background:#fff;border:1px solid #eceff3;border-radius:11px;padding:10px;text-align:center}
+.entp .chip .v{font-size:20px;font-weight:800}.entp .chip .l{font-size:11px;color:#6b7280}
+.entp .ed .edtabs{display:flex;gap:4px;border-bottom:1px solid #eef1f5;margin-bottom:12px}
+.entp .ed .edtabs button{border:0;background:transparent;padding:8px 10px;font-size:12.5px;font-weight:600;color:#6b7280;cursor:pointer;border-bottom:2px solid transparent}
+.entp .ed .edtabs button.on{color:#2563eb;border-bottom-color:#2563eb}
+.entp .ed .fg{margin-bottom:10px}
+.entp .ed .fg label{display:block;font-size:11px;color:#6b7280;margin-bottom:3px}
+.entp .ed .fg .inp{border:1px solid #d7dce3;border-radius:9px;padding:8px 10px;font-size:13px;background:#f9fafb;color:#1f2937}
+.entp .ed .row2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.entp .ed .qa{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
+.entp .ed .qa button{display:flex;align-items:center;gap:7px;justify-content:center;border:1px solid #e3e7ed;border-radius:9px;padding:9px;font-size:12px;font-weight:600;cursor:pointer;background:#fff;color:#374151}
+.entp .ed .qa button.ok{background:#eafaf0;border-color:#bfead0;color:#16a34a}
+.entp .ed .qa button.bl{background:#eef4ff;border-color:#cfe0ff;color:#2563eb}
+.entp .ed .qa button.rd{background:#fdeeee;border-color:#f6cccc;color:#dc2626}
+.entp .ed .foot{display:flex;gap:8px;margin-top:10px}
+`;
+function viewEntregasPlan() {
+  h(`<div class="entp"><style>${ENTP_CSS}</style><div id="epRoot">Cargando…</div></div>`);
+  (async () => {
+    let d;
+    try { d = await api('/panol/dashboard'); } catch (e) { $('#epRoot').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
+    const E = d.entregas;
+    const now = new Date(); const nowMs = now.getTime();
+    const RES = id => 'RES-' + String(id).padStart(6, '0');
+    const estadoDe = e => new Date(e.fecha_inicio).getTime() < nowMs ? ['Atrasada', 'atr'] : ['Confirmada', 'conf'];
+    // Alertas
+    const atrasadas = E.filter(e => new Date(e.fecha_inicio).getTime() < nowMs).length;
+    const sinUnidad = E.filter(e => e.por_individualizar && (!e.unidades || !e.unidades.length)).length;
+    let conflictos = 0;
+    for (let i = 0; i < E.length; i++) for (let j = i + 1; j < E.length; j++) {
+      const a = E[i], b = E[j];
+      if (new Date(a.fecha_inicio) < new Date(b.fecha_fin || b.fecha_inicio) && new Date(b.fecha_inicio) < new Date(a.fecha_fin || a.fecha_inicio)) { conflictos++; break; }
+    }
+    const vencidas = atrasadas; // sin gestión y fuera de plazo (aprox)
+    const nAlert = atrasadas + vencidas + conflictos + sinUnidad;
+
+    // Timeline vertical 08–19.
+    const AX0 = 8, AX1 = 19, SPAN = AX1 - AX0, H = 560;
+    const topPx = t => { const dt = new Date(t); const hh = dt.getHours() + dt.getMinutes() / 60; return Math.max(0, Math.min(H, (hh - AX0) / SPAN * H)); };
+    const colores = ['#3b82f6', '#8b5cf6', '#22c55e', '#06b6d4', '#ef4444', '#f59e0b'];
+    const hrsLines = []; for (let hgt = AX0; hgt <= AX1; hgt++) { const y = (hgt - AX0) / SPAN * H; hrsLines.push(`<div class="hr" style="top:${y}px">${('0' + hgt).slice(-2)}:00</div>`); }
+    let sel = 0;
+
+    const evHtml = () => E.map((e, i) => {
+      const top = topPx(e.fecha_inicio);
+      const dur = Math.max(0.6, (new Date(e.fecha_fin || e.fecha_inicio) - new Date(e.fecha_inicio)) / 3600000);
+      const hgt = Math.max(42, dur / SPAN * H);
+      const [elab, ecls] = estadoDe(e);
+      return `<div class="ev ${i === sel ? 'sel' : ''}" data-i="${i}" style="top:${top}px;height:${hgt}px;background:${colores[i % colores.length]}">
+        <div class="t1"><span>${RES(e.id)} · Entrega</span><span>${fmtHora(e.fecha_inicio)} – ${fmtHora(e.fecha_fin || e.fecha_inicio)}</span></div>
+        <div class="t2">${escD(e.item)} (x1)</div>
+        <span class="bg">${elab}</span></div>`;
+    }).join('');
+    const nowLine = (() => { const nh = now.getHours() + now.getMinutes() / 60; if (nh < AX0 || nh > AX1) return ''; return `<div class="nowl" style="top:${topPx(now)}px"><span class="lb">Ahora ${fmtHora(now)}</span></div>`; })();
+
+    const nextHtml = E.length ? E.map((e, i) => {
+      const [elab, ecls] = estadoDe(e);
+      return `<div class="nextit" data-i="${i}"><div class="hr">${fmtHora(e.fecha_inicio)}</div>
+        <div class="bd"><b>${RES(e.id)}</b><small>${escD(e.item)} (x1)</small></div>
+        <span class="badge ${ecls}">${elab}</span></div>`;
+    }).join('') : '<p class="muted" style="font-size:12.5px">No hay entregas para hoy.</p>';
+
+    const alertRow = (cls, ic, t, s, n) => `<div class="alert ${cls}"><div style="font-size:16px">${ic}</div><div><b>${t} (${n})</b><small>${s}</small></div><span class="n">›</span></div>`;
+
+    $('#epRoot').innerHTML = `
+      <div class="ehead">
+        <div class="ti"><div class="tk">🚚</div><div><h1>Planificación y Ejecución de Entregas</h1>
+          <p>Gestiona las entregas programadas, prepara pedidos, confirma retiros y controla el estado de las reservas.</p></div></div>
+        <div class="btns"><button class="b gh">📅 Hoy</button><button class="b pri" id="epNueva">+ Nueva entrega</button></div>
+      </div>
+      <div class="grid3">
+        <div>
+          <div class="pnl"><h3>⚠️ Alertas operativas (${nAlert})</h3>
+            ${alertRow('r', '📅', 'Entregas atrasadas', 'No retiradas en el horario programado.', atrasadas)}
+            ${alertRow('o', '⏰', 'Reservas vencidas', 'Sin gestión y fuera del plazo.', vencidas)}
+            ${alertRow('y', '⚠️', 'Conflictos de horario', 'Entrega se superpone con otra.', conflictos)}
+            ${alertRow('p', '📦', 'Equipos no disponibles', 'Sin unidades disponibles para la fecha.', sinUnidad)}
+          </div>
+          <div class="pnl" style="margin-top:12px"><h3>📅 Próximas entregas (hoy) <span style="color:#6b7280;font-weight:600">${E.length}</span></h3>
+            <div id="epNext">${nextHtml}</div>
+          </div>
+        </div>
+        <div>
+          <div class="pnl cal">
+            <div class="caltop"><div class="seg"><button class="on">Día</button><button>Semana</button><button>Mes</button></div>
+              <div class="nav"><button>‹</button>📅 ${cap(new Date().toLocaleDateString('es-CL', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }))}<button>›</button></div></div>
+            <div class="vt">${hrsLines.join('')}${evHtml()}${nowLine}</div>
+          </div>
+          <div class="chips">
+            <div class="chip"><div class="v">${E.length}</div><div class="l">🚚 Entregas de hoy</div></div>
+            <div class="chip"><div class="v">0</div><div class="l">📦 Por preparar</div></div>
+            <div class="chip"><div class="v">0</div><div class="l">✅ Preparadas</div></div>
+            <div class="chip"><div class="v">${E.length - atrasadas}</div><div class="l">✔️ Confirmadas</div></div>
+            <div class="chip"><div class="v">${atrasadas}</div><div class="l">⚠️ Atrasadas</div></div>
+          </div>
+        </div>
+        <div class="pnl ed"><div id="epEditor"></div></div>
+      </div>`;
+
+    const renderEditor = () => {
+      const e = E[sel];
+      if (!e) { $('#epEditor').innerHTML = '<p class="muted" style="font-size:13px">Selecciona una entrega en la línea de tiempo.</p>'; return; }
+      const [elab] = estadoDe(e);
+      const fecha = new Date(e.fecha_inicio);
+      $('#epEditor').innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <b style="font-size:15px">✏️ Entrega programada</b><button class="dots" id="epClose" style="border:0;background:transparent;cursor:pointer;color:#9aa3af;font-size:18px">×</button></div>
+        <div class="edtabs"><button class="on" data-t="datos">Datos de entrega</button><button data-t="equipos">Equipos / Kit</button><button data-t="hist">Historial</button></div>
+        <div id="edBody"></div>`;
+      const tabs = {
+        datos: `
+          <div class="row2"><div class="fg"><label>N° de reserva *</label><div class="inp">${RES(e.id)}</div></div>
+            <div class="fg"><label>Estado *</label><div class="inp">⏳ ${elab}</div></div></div>
+          <div class="fg"><label>Estudiante *</label><div class="inp">${escD(e.estudiante)}</div></div>
+          <div class="fg"><label>Asignatura *</label><div class="inp">${escD(e.asignatura)}</div></div>
+          <div class="row2"><div class="fg"><label>Equipo / Kit *</label><div class="inp">${escD(e.item)}</div></div>
+            <div class="fg"><label>Cantidad *</label><div class="inp">1</div></div></div>
+          <div class="row2"><div class="fg"><label>Sede *</label><div class="inp">${escD((ME.sedes && (ME.sedes.find(s => s.id === SEDE) || {}).nombre) || 'Sede activa')}</div></div>
+            <div class="fg"><label>Responsable *</label><div class="inp">${escD(ME.user.nombre)}</div></div></div>
+          <div class="row2"><div class="fg"><label>Fecha *</label><div class="inp">${fecha.toLocaleDateString('es-CL')}</div></div>
+            <div class="fg"><label>Hora de retiro *</label><div class="inp">${fmtHora(e.fecha_inicio)}</div></div></div>
+          <div class="fg"><label>Hora de devolución *</label><div class="inp">${fmtHora(e.fecha_fin || e.fecha_inicio)}</div></div>
+          <div style="font-weight:700;font-size:12.5px;margin:10px 0 2px">⚡ Acciones rápidas</div>
+          <div class="qa">
+            <button class="ok" id="epConf">✅ Confirmar entrega</button>
+            <button class="bl" id="epPrep">📦 Preparar pedido</button>
+            <button id="epReprog">📅 Reprogramar</button>
+            <button class="rd" id="epCanc">✖ Cancelar</button>
+            <button id="epParc">📝 Registrar entrega parcial</button>
+            <button id="epScan">🔳 Escanear / Validar equipo</button>
+          </div>
+          <div class="foot"><button class="b gh" style="flex:1" id="epClose2">Cancelar</button><button class="b pri" style="flex:1" id="epSave">Guardar cambios</button></div>`,
+        equipos: `<div class="fg"><label>Ítem reservado</label><div class="inp">${escD(e.item)} (x1)</div></div>
+          ${e.por_individualizar ? `<p class="muted" style="font-size:12.5px">Reserva por categoría — el pañol asigna la unidad al entregar. Unidades disponibles: <b>${(e.unidades ? e.unidades.length : 0)}</b>.</p>` : `<div class="fg"><label>Unidad asignada</label><div class="inp">${escD(e.equipo || '—')}${e.codigo_qr ? ' · ' + escD(e.codigo_qr) : ''}</div></div>`}`,
+        hist: `<p class="muted" style="font-size:12.5px">Reserva ${RES(e.id)} · estado ${elab}.<br>Retiro programado ${fmtHora(e.fecha_inicio)} · devolución ${fmtHora(e.fecha_fin || e.fecha_inicio)}.</p>`,
+      };
+      const showTab = t => {
+        $('#edBody').innerHTML = tabs[t];
+        $('#epEditor').querySelectorAll('.edtabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+        if (t === 'datos') {
+          $('#epConf').onclick = () => modalEntregar(e);
+          $('#epScan').onclick = () => modalEntregar(e);
+          $('#epReprog').onclick = () => toast('Reprogramar: disponible desde la agenda de la reserva');
+          $('#epPrep').onclick = () => toast('Pedido marcado como preparado (demo)');
+          $('#epParc').onclick = () => toast('Entrega parcial: usa "Entregar" por unidad');
+          $('#epCanc').onclick = () => toast('Para cancelar, gestiona la reserva del estudiante');
+          $('#epSave').onclick = () => toast('Sin cambios que guardar');
+          const cl = () => { sel = -1; renderEditorEmpty(); };
+          if ($('#epClose')) $('#epClose').onclick = cl;
+          if ($('#epClose2')) $('#epClose2').onclick = cl;
+        }
+      };
+      $('#epEditor').querySelectorAll('.edtabs button').forEach(b => b.onclick = () => showTab(b.dataset.t));
+      showTab('datos');
+    };
+    const renderEditorEmpty = () => { $('#epEditor').innerHTML = '<p class="muted" style="font-size:13px">Selecciona una entrega en la línea de tiempo o en “Próximas entregas”.</p>'; };
+
+    const selectIdx = i => { sel = i; $('.entp .vt').innerHTML = hrsLines.join('') + evHtml() + nowLine; bindTimeline(); renderEditor(); };
+    const bindTimeline = () => { $('#epRoot').querySelectorAll('.vt .ev').forEach(b => b.onclick = () => selectIdx(Number(b.dataset.i))); };
+    bindTimeline();
+    $('#epRoot').querySelectorAll('#epNext .nextit').forEach(b => b.onclick = () => selectIdx(Number(b.dataset.i)));
+    $('#epNueva') && ($('#epNueva').onclick = () => toast('Las entregas se generan desde las reservas de los estudiantes'));
+    if (E.length) renderEditor(); else renderEditorEmpty();
+  })();
 }
 
 // ===================== Historial de entregas =====================

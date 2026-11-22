@@ -729,7 +729,16 @@ app.get('/api/panol/dashboard', auth, requireRole(...OPERACION), wrap(async (req
         [row.categoria_id, sede])).rows;
     }
   }
-  res.json({ reservas_pendientes, entregas_hoy, devoluciones_hoy, alertas_stock, prog_hoy, prog_semana, prog_mes, entregas });
+  const devoluciones = (await db.query(
+    `SELECT p.id, p.fecha_salida, r.fecha_fin AS esperada, u.nombre AS estudiante,
+            e.nombre AS equipo, e.codigo_qr, e.n_serie, e.marca, e.modelo, c.nombre AS categoria
+     FROM prestamo p JOIN usuario u ON u.rut=p.usuario_rut
+     JOIN equipo e ON e.id=p.equipo_id JOIN categoria c ON c.id=e.categoria_id
+     LEFT JOIN reserva r ON r.id=p.reserva_id
+     WHERE e.entidad_id=$1 AND p.estado IN ('abierto','atrasado')
+       AND (r.fecha_fin IS NULL OR r.fecha_fin::date <= current_date)
+     ORDER BY r.fecha_fin NULLS LAST`, [sede])).rows;
+  res.json({ reservas_pendientes, entregas_hoy, devoluciones_hoy, alertas_stock, prog_hoy, prog_semana, prog_mes, entregas, devoluciones });
 }));
 
 // Historial de entregas (préstamos) de la sede.
