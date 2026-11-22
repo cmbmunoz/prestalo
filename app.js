@@ -20,6 +20,24 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const ANTICIPACION_RECINTO_H = 72;   // RF-53 (recintos, con autorización)
 const ANTICIPACION_MIN_H = 48;       // Regla común a las sedes (48 h). Parametrizable por sede (entidad.horas_anticipacion).
+
+// RF-11: el plazo de anticipación se cuenta en HORAS HÁBILES (lunes a viernes;
+// sábado y domingo no suman). Se usa en la validación de reservas.
+function horasHabilesEntre(desde, hasta) {
+  if (!(hasta > desde)) return 0;
+  let total = 0;
+  let d = new Date(desde.getFullYear(), desde.getMonth(), desde.getDate());
+  for (; d < hasta; d.setDate(d.getDate() + 1)) {
+    const wd = d.getDay();                    // 0 domingo, 6 sábado
+    if (wd === 0 || wd === 6) continue;
+    const diaIni = new Date(d);
+    const diaFin = new Date(d); diaFin.setDate(diaFin.getDate() + 1);
+    const segIni = new Date(Math.max(diaIni, desde));
+    const segFin = new Date(Math.min(diaFin, hasta));
+    if (segFin > segIni) total += (segFin - segIni) / 3600000;
+  }
+  return total;
+}
 const DEMO_PASSWORD = 'prestalo';
 
 // ----------------------- Middleware de sesión -----------------------
@@ -314,14 +332,15 @@ app.post('/api/reservas', auth, requireRole('alumno', 'docente'), wrap(async (re
   } catch (e) { if (e.code !== '42703') throw e; } // 42703 = columna aún sin migrar → usa el valor común
 
   // RF-51/53: recinto o equipo que requiere autorización → autorización Jefatura/DAO
+  // RF-11: la anticipación se cuenta en HORAS HÁBILES (días hábiles, sin fin de semana).
   const esRecinto = eq.tipo === 'recinto' || eq.requiere_autorizacion;
-  const horas = (ini - now) / 3600000;
+  const horas = horasHabilesEntre(now, ini);
   if (esRecinto) {
     const reqH = Math.max(ANTICIPACION_RECINTO_H, minHoras);
     if (horas < reqH)
-      return res.status(400).json({ error: `Los recintos requieren al menos ${reqH} h de anticipación (RF-53)` });
+      return res.status(400).json({ error: `Los recintos requieren al menos ${reqH} h hábiles de anticipación (RF-53)` });
   } else if (horas < minHoras) {
-    return res.status(400).json({ error: `El plazo de reserva es de al menos ${minHoras} h de anticipación. Para casos excepcionales, gestiona una solicitud especial.` });
+    return res.status(400).json({ error: `El plazo de reserva es de al menos ${minHoras} h hábiles de anticipación (días hábiles). Para casos excepcionales, gestiona una solicitud especial.` });
   }
 
   // Bloqueo de horarios: periodo no disponible para este equipo (o global)
@@ -1245,10 +1264,30 @@ app.get('/api/tareas/:id', auth, wrap(async (req, res) => {
     `SELECT t.*, a.nombre AS asignatura, a.seccion FROM tarea t JOIN asignatura a ON a.id=t.asignatura_id
      JOIN carrera c ON c.id=a.carrera_id WHERE t.id=$1 AND c.entidad_id=$2`, [req.params.id, req.sede])).rows[0];
   if (!t) return res.status(404).json({ error: 'Tarea no encontrada' });
-  const equipos = (await db.query(
-    `SELECT e.id, e.nombre, e.codigo_qr, e.estado, cat.nombre AS categoria
-     FROM tarea_equipo te JOIN equipo e ON e.id=te.equipo_id LEFT JOIN categoria cat ON cat.id=e.categoria_id
-     WHERE te.tarea_id=$1 ORDER BY e.nombre`, [req.params.id])).rows;
+  // RF-11: categorías habilitadas de la tarea.
+  let categorias = [];
+  try {
+    categorias = (await db.query(
+      `SELECT c.id, c.nombre, c.simbolo,
+              (SELECT count(*)::int FROM equipo e WHERE e.categoria_id=c.id AND e.entidad_id=$2 AND e.estado='disponible') AS disponibles
+       FROM tarea_categoria tc JOIN categoria c ON c.id=tc.categoria_id
+       WHERE tc.tarea_id=$1 ORDER BY c.nombre`, [req.params.id, req.sede])).rows;
+  } catch (e) { if (e.code !== '42P01') throw e; } // migración 16 aún sin aplicar
+  // Unidades disponibles para reservar: equipos de esas categorías en la sede.
+  // (Si no hay categorías —tareas legadas— se usan los equipos habilitados por tarea_equipo.)
+  let equipos;
+  if (categorias.length) {
+    equipos = (await db.query(
+      `SELECT e.id, e.nombre, e.codigo_qr, e.estado, cat.nombre AS categoria, cat.id AS categoria_id
+       FROM equipo e JOIN categoria cat ON cat.id=e.categoria_id
+       WHERE e.entidad_id=$2 AND cat.id IN (SELECT categoria_id FROM tarea_categoria WHERE tarea_id=$1)
+       ORDER BY cat.nombre, e.nombre`, [req.params.id, req.sede])).rows;
+  } else {
+    equipos = (await db.query(
+      `SELECT e.id, e.nombre, e.codigo_qr, e.estado, cat.nombre AS categoria, cat.id AS categoria_id
+       FROM tarea_equipo te JOIN equipo e ON e.id=te.equipo_id LEFT JOIN categoria cat ON cat.id=e.categoria_id
+       WHERE te.tarea_id=$1 ORDER BY e.nombre`, [req.params.id])).rows;
+  }
   let reservas = [];
   if (req.user.rol === 'docente' || req.user.rol === 'admin') {
     reservas = (await db.query(
@@ -1256,12 +1295,14 @@ app.get('/api/tareas/:id', auth, wrap(async (req, res) => {
        FROM reserva r JOIN usuario u ON u.rut=r.usuario_rut JOIN equipo e ON e.id=r.equipo_id
        WHERE r.tarea_id=$1 ORDER BY r.created_at DESC`, [req.params.id])).rows;
   }
-  res.json({ tarea: t, equipos, reservas });
+  res.json({ tarea: t, categorias, equipos, reservas });
 }));
 
 app.post('/api/tareas', auth, requireRole('docente', 'admin'), wrap(async (req, res) => {
-  const { asignatura_id, titulo, descripcion, fecha_inicio, fecha_fin, tipo, equipos } = req.body || {};
+  const { asignatura_id, titulo, descripcion, fecha_inicio, fecha_fin, tipo, equipos, categorias } = req.body || {};
   if (!asignatura_id || !titulo || !fecha_inicio || !fecha_fin) return res.status(400).json({ error: 'Faltan datos de la tarea' });
+  const cats = Array.isArray(categorias) ? [...new Set(categorias.map(Number).filter(Boolean))] : [];
+  if (!cats.length) return res.status(400).json({ error: 'Debes habilitar al menos una categoría para la tarea (RF-11).' });
   const ini = new Date(fecha_inicio), fin = new Date(fecha_fin);
   if (isNaN(ini) || isNaN(fin) || fin <= ini) return res.status(400).json({ error: 'Fechas inválidas' });
   const a = (await db.query(`SELECT a.id FROM asignatura a JOIN carrera c ON c.id=a.carrera_id WHERE a.id=$1 AND c.entidad_id=$2`, [asignatura_id, req.sede])).rows[0];
@@ -1270,11 +1311,25 @@ app.post('/api/tareas', auth, requireRole('docente', 'admin'), wrap(async (req, 
     const ok = await db.query(`SELECT 1 FROM usuario_asignatura WHERE usuario_rut=$1 AND asignatura_id=$2 AND rol_en_asig='docente'`, [req.user.rut, asignatura_id]);
     if (!ok.rows.length) return res.status(403).json({ error: 'No estás a cargo de esa asignatura' });
   }
+  // RF-11: toda categoría de la tarea debe estar habilitada (elegibilidad) para la asignatura.
+  const eleg = (await db.query(`SELECT categoria_id FROM elegibilidad WHERE asignatura_id=$1`, [asignatura_id])).rows.map(r => r.categoria_id);
+  const noEleg = cats.filter(c => !eleg.includes(c));
+  if (noEleg.length) {
+    const nombres = (await db.query(`SELECT nombre FROM categoria WHERE id=ANY($1)`, [noEleg])).rows.map(r => r.nombre);
+    return res.status(400).json({ error: `Categoría no habilitada para la asignatura: ${nombres.join(', ') || noEleg.join(', ')}. No se puede crear la tarea (RF-11).` });
+  }
   const tp = tipo === 'grupal' ? 'grupal' : 'individual';
   const t = (await db.query(
     `INSERT INTO tarea (asignatura_id, docente_rut, titulo, descripcion, fecha_inicio, fecha_fin, tipo)
      VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
     [asignatura_id, req.user.rut, titulo.trim(), descripcion || null, ini, fin, tp])).rows[0];
+  try {
+    for (const cid of cats) await db.query(`INSERT INTO tarea_categoria (tarea_id, categoria_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [t.id, cid]);
+  } catch (e) {
+    if (e.code === '42P01') { await db.query(`DELETE FROM tarea WHERE id=$1`, [t.id]); return res.status(409).json({ error: 'Falta correr la migración 16 (tarea_categoria).' }); }
+    throw e;
+  }
+  // Compatibilidad: si además se enviaron equipos específicos, se registran.
   if (Array.isArray(equipos)) {
     for (const eid of equipos) await db.query(`INSERT INTO tarea_equipo (tarea_id, equipo_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [t.id, eid]);
   }
@@ -1292,15 +1347,33 @@ app.post('/api/tareas', auth, requireRole('docente', 'admin'), wrap(async (req, 
 }));
 
 app.put('/api/tareas/:id', auth, requireRole('docente', 'admin'), wrap(async (req, res) => {
-  const { titulo, descripcion, fecha_inicio, fecha_fin, tipo, equipos } = req.body || {};
+  const { titulo, descripcion, fecha_inicio, fecha_fin, tipo, equipos, categorias } = req.body || {};
   const t = (await db.query(`SELECT t.* FROM tarea t JOIN asignatura a ON a.id=t.asignatura_id JOIN carrera c ON c.id=a.carrera_id WHERE t.id=$1 AND c.entidad_id=$2`, [req.params.id, req.sede])).rows[0];
   if (!t) return res.status(404).json({ error: 'Tarea no encontrada' });
   if (req.user.rol === 'docente' && t.docente_rut !== req.user.rut) return res.status(403).json({ error: 'No es tu tarea' });
   const ini = fecha_inicio ? new Date(fecha_inicio) : t.fecha_inicio;
   const fin = fecha_fin ? new Date(fecha_fin) : t.fecha_fin;
   const tp = tipo ? (tipo === 'grupal' ? 'grupal' : 'individual') : t.tipo;
+  // RF-11: si se actualizan categorías, validar elegibilidad contra la asignatura.
+  let cats = null;
+  if (Array.isArray(categorias)) {
+    cats = [...new Set(categorias.map(Number).filter(Boolean))];
+    if (!cats.length) return res.status(400).json({ error: 'La tarea debe tener al menos una categoría (RF-11).' });
+    const eleg = (await db.query(`SELECT categoria_id FROM elegibilidad WHERE asignatura_id=$1`, [t.asignatura_id])).rows.map(r => r.categoria_id);
+    const noEleg = cats.filter(c => !eleg.includes(c));
+    if (noEleg.length) {
+      const nombres = (await db.query(`SELECT nombre FROM categoria WHERE id=ANY($1)`, [noEleg])).rows.map(r => r.nombre);
+      return res.status(400).json({ error: `Categoría no habilitada para la asignatura: ${nombres.join(', ') || noEleg.join(', ')} (RF-11).` });
+    }
+  }
   await db.query(`UPDATE tarea SET titulo=COALESCE($2,titulo), descripcion=$3, fecha_inicio=$4, fecha_fin=$5, tipo=$6, updated_at=now() WHERE id=$1`,
     [req.params.id, titulo || null, descripcion || null, ini, fin, tp]);
+  if (cats) {
+    try {
+      await db.query(`DELETE FROM tarea_categoria WHERE tarea_id=$1`, [req.params.id]);
+      for (const cid of cats) await db.query(`INSERT INTO tarea_categoria (tarea_id, categoria_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [req.params.id, cid]);
+    } catch (e) { if (e.code === '42P01') return res.status(409).json({ error: 'Falta correr la migración 16 (tarea_categoria).' }); throw e; }
+  }
   if (Array.isArray(equipos)) {
     await db.query(`DELETE FROM tarea_equipo WHERE tarea_id=$1`, [req.params.id]);
     for (const eid of equipos) await db.query(`INSERT INTO tarea_equipo (tarea_id, equipo_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [req.params.id, eid]);
@@ -1317,27 +1390,69 @@ app.delete('/api/tareas/:id', auth, requireRole('docente', 'admin'), wrap(async 
 }));
 
 app.post('/api/tareas/:id/reservar', auth, requireRole('alumno', 'docente'), wrap(async (req, res) => {
-  const { equipo_id, fecha_inicio, fecha_fin } = req.body || {};
-  if (!equipo_id || !fecha_inicio || !fecha_fin) return res.status(400).json({ error: 'Faltan datos de la reserva' });
+  const { equipo_id, integrantes } = req.body || {};
+  if (!equipo_id) return res.status(400).json({ error: 'Debes elegir un equipo disponible' });
   const t = (await db.query(`SELECT t.* FROM tarea t JOIN asignatura a ON a.id=t.asignatura_id JOIN carrera c ON c.id=a.carrera_id WHERE t.id=$1 AND c.entidad_id=$2`, [req.params.id, req.sede])).rows[0];
   if (!t) return res.status(404).json({ error: 'Tarea no encontrada' });
+  // El solicitante debe estar inscrito en la asignatura/sección de la tarea.
   const insc = await db.query(`SELECT 1 FROM usuario_asignatura WHERE usuario_rut=$1 AND asignatura_id=$2`, [req.user.rut, t.asignatura_id]);
-  if (!insc.rows.length) return res.status(403).json({ error: 'No estás inscrito en la asignatura de la tarea' });
-  const te = await db.query(`SELECT 1 FROM tarea_equipo WHERE tarea_id=$1 AND equipo_id=$2`, [req.params.id, equipo_id]);
-  if (!te.rows.length) return res.status(403).json({ error: 'Ese equipo no está habilitado para la tarea' });
+  if (!insc.rows.length) return res.status(403).json({ error: 'No estás inscrito en la asignatura/sección de la tarea' });
+
   const eq = (await db.query(`SELECT * FROM equipo WHERE id=$1 AND entidad_id=$2`, [equipo_id, req.sede])).rows[0];
   if (!eq) return res.status(404).json({ error: 'Equipo no encontrado' });
   if (eq.estado !== 'disponible') return res.status(409).json({ error: `El equipo no está disponible (estado: ${eq.estado})` });
-  const ini = new Date(fecha_inicio), fin = new Date(fecha_fin), now = new Date();
-  if (isNaN(ini) || isNaN(fin) || fin <= ini) return res.status(400).json({ error: 'Fechas inválidas' });
-  if (ini < now) return res.status(400).json({ error: 'La reserva no puede iniciar en el pasado' });
-  if (ini < new Date(t.fecha_inicio) || fin > new Date(t.fecha_fin)) return res.status(400).json({ error: 'La reserva debe estar dentro de las fechas de la tarea' });
+
+  // RF-11: la categoría del equipo debe estar habilitada en la tarea…
+  let catOk = false;
+  try {
+    catOk = (await db.query(`SELECT 1 FROM tarea_categoria WHERE tarea_id=$1 AND categoria_id=$2`, [req.params.id, eq.categoria_id])).rowCount > 0;
+  } catch (e) { if (e.code !== '42P01') throw e; } // migración 16 aún sin aplicar
+  if (!catOk) { // compatibilidad con tareas legadas por equipo
+    const te = await db.query(`SELECT 1 FROM tarea_equipo WHERE tarea_id=$1 AND equipo_id=$2`, [req.params.id, equipo_id]);
+    if (!te.rows.length) return res.status(403).json({ error: 'La categoría del equipo no está habilitada para la tarea (RF-11).' });
+  }
+  // …y además ser elegible para la asignatura.
+  const eleg = await db.query(`SELECT 1 FROM elegibilidad WHERE asignatura_id=$1 AND categoria_id=$2`, [t.asignatura_id, eq.categoria_id]);
+  if (!eleg.rows.length) return res.status(403).json({ error: 'El equipo no está habilitado para la asignatura (elegibilidad, RF-11).' });
+
+  // RF-11: las fechas COINCIDEN con las de la tarea (las define el docente).
+  const ini = new Date(t.fecha_inicio), fin = new Date(t.fecha_fin), now = new Date();
+
+  // RF-11: anticipación en HORAS HÁBILES (parametrizable por sede).
+  let minHoras = ANTICIPACION_MIN_H;
+  try {
+    const cfg = (await db.query(`SELECT horas_anticipacion FROM entidad WHERE id=$1`, [eq.entidad_id])).rows[0];
+    if (cfg && Number.isFinite(Number(cfg.horas_anticipacion))) minHoras = Number(cfg.horas_anticipacion);
+  } catch (e) { if (e.code !== '42703') throw e; }
+  if (horasHabilesEntre(now, ini) < minHoras)
+    return res.status(400).json({ error: `El plazo de reserva es de al menos ${minHoras} h hábiles de anticipación respecto al inicio de la tarea. Para excepciones, usa una solicitud especial.` });
+
   const sanc = await db.query(`SELECT motivo FROM v_sanciones_vigentes WHERE usuario_rut=$1 AND (asignatura_id IS NULL OR asignatura_id=$2)`, [req.user.rut, t.asignatura_id]);
   if (sanc.rows.length) return res.status(403).json({ error: `Bloqueado por sanción vigente: ${sanc.rows[0].motivo}` });
+
+  // RF-11/52: los integrantes deben estar inscritos en la MISMA asignatura/sección de la tarea.
+  const grupo = Array.isArray(integrantes)
+    ? integrantes.filter(x => x && x.rut).map(x => ({ nombre: (x.nombre || '').trim(), rut: x.rut.trim() }))
+    : [];
+  for (const g of grupo) {
+    if (g.rut === req.user.rut) continue;
+    const ok = await db.query(
+      `SELECT u.nombre FROM usuario_asignatura ua JOIN usuario u ON u.rut=ua.usuario_rut WHERE ua.usuario_rut=$1 AND ua.asignatura_id=$2`,
+      [g.rut, t.asignatura_id]);
+    if (!ok.rows.length) return res.status(400).json({ error: `El integrante ${g.rut} no está inscrito en la asignatura/sección de la tarea (RF-11).` });
+    if (!g.nombre) g.nombre = ok.rows[0].nombre;
+  }
+  const esGrupal = grupo.length > 0;
+
   const r = (await db.query(
-    `INSERT INTO reserva (usuario_rut, equipo_id, fecha_inicio, fecha_fin, estado, uso_academico, tarea_id)
-     VALUES ($1,$2,$3,$4,'confirmada',TRUE,$5) RETURNING id`, [req.user.rut, equipo_id, ini, fin, req.params.id])).rows[0];
+    `INSERT INTO reserva (usuario_rut, equipo_id, fecha_inicio, fecha_fin, estado, uso_academico, es_grupal, tarea_id)
+     VALUES ($1,$2,$3,$4,'confirmada',TRUE,$5,$6) RETURNING id`,
+    [req.user.rut, equipo_id, ini, fin, esGrupal, req.params.id])).rows[0];
   await db.query(`INSERT INTO integrante (reserva_id, usuario_rut, nombre, rut, es_responsable) VALUES ($1,$2,$3,$4,TRUE)`, [r.id, req.user.rut, req.user.nombre, req.user.rut]);
+  for (const g of grupo) {
+    if (g.rut === req.user.rut) continue;
+    await db.query(`INSERT INTO integrante (reserva_id, nombre, rut, es_responsable) VALUES ($1,$2,$3,FALSE) ON CONFLICT (reserva_id, rut) DO NOTHING`, [r.id, g.nombre, g.rut]);
+  }
   await db.query(`UPDATE equipo SET estado='reservado' WHERE id=$1`, [equipo_id]);
   res.status(201).json({ id: r.id, mensaje: 'Reserva confirmada dentro de la tarea.' });
 }));
@@ -1353,6 +1468,24 @@ app.get('/api/asignaturas/:id/equipos', auth, wrap(async (req, res) => {
      FROM equipo e JOIN categoria c ON c.id=e.categoria_id
      WHERE e.entidad_id=$1 AND c.id IN (SELECT categoria_id FROM elegibilidad WHERE asignatura_id=$2)
      ORDER BY c.nombre, e.nombre`, [req.sede, aid]);
+  res.json(rows);
+}));
+
+// RF-11: categorías ELEGIBLES para una asignatura (para crear tareas por categoría),
+// con el conteo de unidades disponibles en la sede.
+app.get('/api/asignaturas/:id/categorias', auth, wrap(async (req, res) => {
+  const aid = Number(req.params.id);
+  if (req.user.rol !== 'admin') {
+    const insc = await db.query(`SELECT 1 FROM usuario_asignatura WHERE usuario_rut=$1 AND asignatura_id=$2`, [req.user.rut, aid]);
+    if (!insc.rowCount) return res.status(403).json({ error: 'No estás inscrito en esta asignatura' });
+  }
+  const { rows } = await db.query(
+    `SELECT c.id, c.nombre, c.simbolo,
+            (SELECT count(*)::int FROM equipo e WHERE e.categoria_id=c.id AND e.entidad_id=$1 AND e.estado='disponible') AS disponibles,
+            (SELECT count(*)::int FROM equipo e WHERE e.categoria_id=c.id AND e.entidad_id=$1) AS total
+     FROM categoria c
+     WHERE c.id IN (SELECT categoria_id FROM elegibilidad WHERE asignatura_id=$2)
+     ORDER BY c.nombre`, [req.sede, aid]);
   res.json(rows);
 }));
 

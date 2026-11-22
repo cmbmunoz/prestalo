@@ -1089,33 +1089,64 @@ async function viewTareas() {
 async function tareaDetalle(id) {
   const d = await api(`/tareas/${id}`);
   const t = d.tarea, docente = ME.user.rol==='docente'||ME.user.rol==='admin';
-  const equiposHtml = d.equipos.length ? d.equipos.map(e => `<div class="row" style="margin-bottom:6px"><div class="ava">${icon(e.categoria)}</div><div class="info"><b>${escD(e.nombre)}</b><small>${escD(e.categoria||'')} · ${(ESTADO_EQ[e.estado]||[e.estado])[0]}</small></div>${!docente ? `<button class="btn sm rsv" data-eid="${e.id}" data-enom="${escD(e.nombre)}" ${e.estado!=='disponible'?'disabled':''}>Reservar</button>`:''}</div>`).join('') : '<p class="muted">Sin equipos habilitados.</p>';
+  const cats = d.categorias || [];
+  const catsHtml = cats.length
+    ? cats.map(c=>`<span class="pill info" style="margin:2px 4px 2px 0;display:inline-block">${escD(c.nombre)} · ${c.disponibles} disp.</span>`).join('')
+    : '<span class="muted" style="font-size:12.5px">Sin categorías habilitadas.</span>';
+  let bodyEquipos = '';
+  if (docente) {
+    bodyEquipos = `<h3 style="font-size:15px;margin:12px 0 8px">Categorías habilitadas</h3><div>${catsHtml}</div>`;
+  } else {
+    const disp = d.equipos || [];
+    const porCat = {};
+    disp.forEach(e => { const k = e.categoria || '—'; (porCat[k] = porCat[k] || []).push(e); });
+    const grupos = Object.keys(porCat).map(cat => {
+      const items = porCat[cat].map(e=>`<div class="row" style="margin-bottom:6px"><div class="ava">${icon(cat)}</div><div class="info"><b>${escD(e.nombre)}</b><small>${(ESTADO_EQ[e.estado]||[e.estado])[0]}</small></div><button class="btn sm rsv" data-eid="${e.id}" data-enom="${escD(e.nombre)}" ${e.estado!=='disponible'?'disabled':''}>Reservar</button></div>`).join('');
+      return `<div style="margin-bottom:8px"><div class="muted" style="font-size:12px;font-weight:600;margin:6px 0 4px">${escD(cat)}</div>${items}</div>`;
+    }).join('');
+    bodyEquipos = `<h3 style="font-size:15px;margin:12px 0 8px">Equipos disponibles para la tarea</h3>
+      <p class="muted" style="font-size:11.5px;margin:-4px 0 8px">Las fechas de la reserva coinciden con las de la tarea.</p>
+      <div id="teq">${grupos || '<p class="muted">No hay unidades disponibles en las categorías de la tarea.</p>'}</div>`;
+  }
   const resHtml = docente ? (d.reservas.length ? `<h3 style="font-size:15px;margin:14px 0 8px">Reservas de alumnos</h3>`+d.reservas.map(r=>`<div class="row" style="margin-bottom:6px"><div class="info"><b>${escD(r.alumno)}</b><small>${escD(r.equipo)} · ${fmtDate(r.fecha_inicio)} → ${fmtDate(r.fecha_fin)}</small></div><span class="pill ${(ESTADO_RES[r.estado]||['','info'])[1]}">${(ESTADO_RES[r.estado]||[r.estado])[0]}</span></div>`).join('') : '<p class="muted" style="margin-top:14px">Aún sin reservas de alumnos.</p>') : '';
   openModal(`<h3>${escD(t.titulo)}</h3>
     <p class="muted" style="font-size:12.5px;margin:-4px 0 8px">${escD(t.asignatura)}${t.seccion?(' · '+escD(t.seccion)):''} · ${t.tipo}<br>${fmtDate(t.fecha_inicio)} → ${fmtDate(t.fecha_fin)}</p>
     ${t.descripcion?`<p style="font-size:13px">${escD(t.descripcion)}</p>`:''}
-    <h3 style="font-size:15px;margin:12px 0 8px">Equipos habilitados</h3>
-    <div id="teq">${equiposHtml}</div>
+    ${bodyEquipos}
     ${resHtml}
     ${docente?`<button class="btn full ghost danger" id="delT" style="margin-top:14px">Eliminar tarea</button>`:''}`);
   if (!docente) {
-    $('#teq').querySelectorAll('.rsv').forEach(b => b.onclick = () => reservarTareaForm(id, b.dataset.eid, b.dataset.enom, t));
+    (document.querySelector('#teq')||document).querySelectorAll('.rsv').forEach(b => b.onclick = () => reservarTareaForm(id, b.dataset.eid, b.dataset.enom, t));
   } else {
     $('#delT').onclick = async () => { if(!confirm('¿Eliminar la tarea?'))return; try{ await api(`/tareas/${id}`,{method:'DELETE'}); closeModal(); toast('Tarea eliminada'); viewTareas(); }catch(e){ toast(e.message||'Error'); } };
   }
 }
 
 function reservarTareaForm(tareaId, equipoId, equipoNom, t) {
+  const grupal = t.tipo === 'grupal';
   openModal(`<h3>Reservar: ${escD(equipoNom)}</h3>
-    <p class="muted" style="font-size:12px;margin:-4px 0 8px">Dentro de la tarea · ${fmtDate(t.fecha_inicio)} → ${fmtDate(t.fecha_fin)}</p>
-    <div class="field"><label>Inicio</label><input id="rI" type="datetime-local" value="${dtLocal(t.fecha_inicio)}"></div>
-    <div class="field"><label>Término</label><input id="rF" type="datetime-local" value="${dtLocal(t.fecha_fin)}"></div>
+    <p class="muted" style="font-size:12px;margin:-4px 0 8px">Dentro de la tarea · fechas fijadas por el docente</p>
+    <div class="field"><label>Inicio</label><input type="datetime-local" value="${dtLocal(t.fecha_inicio)}" disabled></div>
+    <div class="field"><label>Término</label><input type="datetime-local" value="${dtLocal(t.fecha_fin)}" disabled></div>
+    ${grupal ? `<label style="font-size:12px;font-weight:600;color:var(--muted)">Integrantes del grupo (deben estar en la misma asignatura y sección)</label>
+      <div id="tInts"></div>
+      <button class="btn sm ghost" id="tAddInt" style="margin:4px 0 8px">+ Agregar integrante</button>` : ''}
     <button class="btn full" id="rOk">Confirmar reserva</button><div class="err" id="rE"></div>`);
+  if (grupal) {
+    const cont = $('#tInts');
+    $('#tAddInt').onclick = () => {
+      const d = document.createElement('div'); d.className = 'integrantes-row';
+      d.innerHTML = `<input placeholder="Nombre (opcional)" class="i-nom"><input placeholder="RUT" class="i-rut"><button class="btn sm danger">×</button>`;
+      d.querySelector('button').onclick = () => d.remove();
+      cont.appendChild(d);
+    };
+  }
   $('#rOk').onclick = async () => {
     $('#rE').textContent='';
-    const fi=$('#rI').value, ff=$('#rF').value;
-    if(!fi||!ff){ $('#rE').textContent='Indica inicio y término'; return; }
-    try { await api(`/tareas/${tareaId}/reservar`,{method:'POST',body:{equipo_id:Number(equipoId),fecha_inicio:fi,fecha_fin:ff}}); closeModal(); toast('Reserva confirmada'); }
+    const integrantes = grupal
+      ? [...document.querySelectorAll('#tInts .integrantes-row')].map(r=>({ nombre:r.querySelector('.i-nom').value.trim(), rut:r.querySelector('.i-rut').value.trim() })).filter(x=>x.rut)
+      : [];
+    try { await api(`/tareas/${tareaId}/reservar`,{method:'POST',body:{equipo_id:Number(equipoId), integrantes}}); closeModal(); toast('Reserva confirmada'); }
     catch(e){ $('#rE').textContent=e.message||'Error'; }
   };
 }
@@ -1123,7 +1154,6 @@ function reservarTareaForm(tareaId, equipoId, equipoNom, t) {
 async function tareaForm() {
   const asigs = ME.asignaturas || [];
   if (!asigs.length) { openModal('<h3>Nueva tarea</h3><p class="muted">No tienes asignaturas a cargo. Pide al administrador que te inscriba como docente en una asignatura (menú Académico).</p>'); return; }
-  const eqs = await api('/equipos');
   openModal(`<h3>Nueva tarea</h3>
     <div class="field"><label>Asignatura</label><select id="tAsig">${asigs.map(a=>`<option value="${a.id}">${escD(a.nombre)}${a.seccion?(' · '+escD(a.seccion)):''}</option>`).join('')}</select></div>
     <div class="field"><label>Título</label><input id="tTit"></div>
@@ -1131,17 +1161,28 @@ async function tareaForm() {
     <div class="field"><label>Inicio</label><input id="tIni" type="datetime-local"></div>
     <div class="field"><label>Término</label><input id="tFin" type="datetime-local"></div>
     <div class="field"><label>Tipo</label><select id="tTipo"><option value="individual">Individual</option><option value="grupal">Grupal</option></select></div>
-    <label style="font-size:12px;font-weight:600;color:var(--muted)">Equipos habilitados</label>
-    <div style="max-height:160px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px;margin:6px 0 10px">
-      ${eqs.length?eqs.map(e=>`<label style="display:flex;gap:8px;align-items:center;font-size:13px;padding:3px 0"><input type="checkbox" class="eqchk" value="${e.id}">${escD(e.nombre)} <span class="muted" style="font-size:11px">${escD(e.categoria||'')}</span></label>`).join(''):'<span class="muted" style="font-size:12.5px">No hay equipos registrados.</span>'}
-    </div>
+    <label style="font-size:12px;font-weight:600;color:var(--muted)">Categorías habilitadas (solo las elegibles para la asignatura)</label>
+    <div id="tCats" style="max-height:170px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px;margin:6px 0 10px"><span class="muted" style="font-size:12.5px">Cargando…</span></div>
     <button class="btn full" id="tOk">Crear tarea</button><div class="err" id="tE"></div>`);
+  const cargarCats = async () => {
+    const aid = Number($('#tAsig').value);
+    $('#tCats').innerHTML = '<span class="muted" style="font-size:12.5px">Cargando…</span>';
+    try {
+      const cats = await api('/asignaturas/' + aid + '/categorias');
+      $('#tCats').innerHTML = cats.length
+        ? cats.map(c=>`<label style="display:flex;gap:8px;align-items:center;font-size:13px;padding:3px 0"><input type="checkbox" class="catchk" value="${c.id}">${escD(c.nombre)} <span class="muted" style="font-size:11px">${c.disponibles} disp. / ${c.total}</span></label>`).join('')
+        : '<span class="muted" style="font-size:12.5px">Esta asignatura no tiene categorías habilitadas (elegibilidad). Pide al administrador que las configure en Académico.</span>';
+    } catch(e){ $('#tCats').innerHTML = `<span class="muted" style="font-size:12.5px">${escD(e.message||'Error')}</span>`; }
+  };
+  $('#tAsig').onchange = cargarCats;
+  cargarCats();
   $('#tOk').onclick = async () => {
     $('#tE').textContent='';
+    const categorias = Array.from(document.querySelectorAll('.catchk:checked')).map(c=>Number(c.value));
     const body = { asignatura_id:Number($('#tAsig').value), titulo:$('#tTit').value.trim(), descripcion:$('#tDesc').value.trim()||null,
-      fecha_inicio:$('#tIni').value, fecha_fin:$('#tFin').value, tipo:$('#tTipo').value,
-      equipos: Array.from(document.querySelectorAll('.eqchk:checked')).map(c=>Number(c.value)) };
+      fecha_inicio:$('#tIni').value, fecha_fin:$('#tFin').value, tipo:$('#tTipo').value, categorias };
     if(!body.titulo||!body.fecha_inicio||!body.fecha_fin){ $('#tE').textContent='Título y fechas son obligatorios'; return; }
+    if(!categorias.length){ $('#tE').textContent='Selecciona al menos una categoría habilitada'; return; }
     try { await api('/tareas',{method:'POST',body}); closeModal(); toast('Tarea creada'); viewTareas(); }
     catch(e){ $('#tE').textContent=e.message||'Error'; }
   };
