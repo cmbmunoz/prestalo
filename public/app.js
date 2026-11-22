@@ -246,7 +246,23 @@ async function buildSedeSelector() {
 
 // ===================== Vistas =====================
 const view = () => $('#view');
-function h(html) { view().innerHTML = html; }
+// Panel operativo activo (para recarga tras una acción y auto-refresh online).
+let DASH_POLL = null, DASHVIEW = { fn: null };
+function stopDashPoll() { if (DASH_POLL) { clearInterval(DASH_POLL); DASH_POLL = null; } }
+function h(html) { stopDashPoll(); DASHVIEW = { fn: null }; view().innerHTML = html; }
+// Recarga la vista operativa activa (Control de Inventario / Planificación) preservando
+// su estado; si no hay una activa, usa el fallback. Se llama tras entregar/recibir.
+function reloadDash(fallback) {
+  if (DASHVIEW.fn === 'ep') return viewEntregasPlan(DASHVIEW.rango, DASHVIEW.ref, { keepId: DASHVIEW.keepId, filtro: DASHVIEW.filtro });
+  if (DASHVIEW.fn === 'inv') return viewInventarioDash(DASHVIEW.rango, DASHVIEW.modo, DASHVIEW.ref);
+  return fallback ? fallback() : null;
+}
+// ¿El usuario está interactuando? (modal abierto o campo con foco) → no auto-refrescar ahora.
+function dashBusy() {
+  if (document.querySelector('.modal, .modal-bg, #modal')) return true;
+  const a = document.activeElement;
+  return !!(a && ['INPUT', 'SELECT', 'TEXTAREA'].includes(a.tagName));
+}
 
 async function render(key) {
   try {
@@ -511,7 +527,8 @@ async function viewInventarioDash(rango = 'hoy', modo = 'programadas', ref = nul
           <div class="lane dev">${blkDev}</div>
         </div>`;
   } else if (rango === 'semana') {
-    const l0 = lunesDe(baseD);
+    // Semana = ventana de 7 días que PARTE en la fecha elegida (no se fuerza al lunes).
+    const l0 = new Date(baseD); l0.setHours(0, 0, 0, 0);
     const porDia = {}; d.entregas.forEach(a => { const k = isoDay(new Date(a.fecha_inicio)); porDia[k] = (porDia[k] || 0) + 1; });
     const celdas = [];
     for (let i = 0; i < 7; i++) {
@@ -522,22 +539,25 @@ async function viewInventarioDash(rango = 'hoy', modo = 'programadas', ref = nul
         <div class="wn">${x.getDate()}</div>
         <div class="wb">${n ? n + '📦' : ''}</div></div>`);
     }
-    timelineTitulo = 'Línea de tiempo de la semana';
+    const fin7 = new Date(l0); fin7.setDate(l0.getDate() + 6);
+    timelineTitulo = `Semana del ${l0.getDate()} ${l0.toLocaleDateString('es-CL',{month:'short'}).replace('.','')} al ${fin7.getDate()} ${fin7.toLocaleDateString('es-CL',{month:'short'}).replace('.','')}`;
     timelineHTML = `<div class="tl"><div class="wkgrid">${celdas.join('')}</div></div>`;
   } else {
+    // Mes por semanas que PARTEN el día 1 (1–7, 8–14, …), no en lunes.
     const y = baseD.getFullYear(), m = baseD.getMonth();
-    const primero = new Date(y, m, 1), ultimo = new Date(y, m + 1, 0);
-    const semanas = []; let cur = lunesDe(primero);
-    while (cur <= ultimo) {
-      const ini = new Date(cur), fin = new Date(cur); fin.setDate(fin.getDate() + 6);
-      const n = d.entregas.filter(a => { const dd = new Date(a.fecha_inicio); return dd >= ini && dd <= new Date(fin.getFullYear(), fin.getMonth(), fin.getDate(), 23, 59, 59); }).length;
+    const ult = new Date(y, m + 1, 0).getDate();
+    const semanas = [];
+    for (let start = 1; start <= ult; start += 7) {
+      const end = Math.min(start + 6, ult);
+      const ini = new Date(y, m, start), fin = new Date(y, m, end);
+      const n = d.entregas.filter(a => { const dd = new Date(a.fecha_inicio); return dd >= new Date(y, m, start, 0, 0, 0) && dd <= new Date(y, m, end, 23, 59, 59); }).length;
       const cur2 = (hoyISO >= isoDay(ini) && hoyISO <= isoDay(fin));
+      const mes = ini.toLocaleDateString('es-CL', { month: 'short' }).replace('.', '');
       semanas.push(`<div class="mwk ${n ? 'has' : ''} ${cur2 ? 'cur' : ''}">
-        <span class="ml">${ini.getDate()} ${ini.toLocaleDateString('es-CL',{month:'short'}).replace('.','')} – ${fin.getDate()} ${fin.toLocaleDateString('es-CL',{month:'short'}).replace('.','')}</span>
-        <span class="mn">${n} entrega${n===1?'':'s'}</span></div>`);
-      cur = new Date(cur); cur.setDate(cur.getDate() + 7);
+        <span class="ml">Desde ${start} ${mes} · ${start}–${end}</span>
+        <span class="mn">${n} entrega${n === 1 ? '' : 's'}</span></div>`);
     }
-    timelineTitulo = 'Línea de tiempo del mes (por semanas)';
+    timelineTitulo = `Mes de ${baseD.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })} (por semanas)`;
     timelineHTML = `<div class="tl">${semanas.join('')}</div>`;
   }
 
@@ -634,16 +654,23 @@ async function viewInventarioDash(rango = 'hoy', modo = 'programadas', ref = nul
   const rp = $('#refPick'); if (rp) rp.onchange = () => { if (rp.value) viewInventarioDash(rango, modo, rp.value); };
   // KPIs como filtros del dashboard.
   $('#invDash').querySelectorAll('.kpi').forEach(c => c.onclick = () => {
-    const m = c.dataset.modo; modo = (modo === m) ? 'programadas' : m;
+    const m = c.dataset.modo; modo = (modo === m) ? 'programadas' : m; DASHVIEW.modo = modo;
     $('#fModo').value = modo;
     $('#invDash').querySelectorAll('.kpi').forEach(k => k.classList.toggle('sel', k.dataset.modo === modo));
     renderTabla();
   });
-  $('#fModo').onchange = () => { modo = $('#fModo').value; $('#invDash').querySelectorAll('.kpi').forEach(k => k.classList.toggle('sel', k.dataset.modo === modo)); renderTabla(); };
+  $('#fModo').onchange = () => { modo = $('#fModo').value; DASHVIEW.modo = modo; $('#invDash').querySelectorAll('.kpi').forEach(k => k.classList.toggle('sel', k.dataset.modo === modo)); renderTabla(); };
   $('#tSrch').oninput = renderTabla;
-  $('#fClear').onclick = () => { modo = 'programadas'; $('#fModo').value = 'programadas'; $('#tSrch').value = ''; $('#invDash').querySelectorAll('.kpi').forEach(k => k.classList.remove('sel')); renderTabla(); };
+  $('#fClear').onclick = () => { modo = 'programadas'; DASHVIEW.modo = modo; $('#fModo').value = 'programadas'; $('#tSrch').value = ''; $('#invDash').querySelectorAll('.kpi').forEach(k => k.classList.remove('sel')); renderTabla(); };
   $('#fModo').value = modo;
   renderTabla();
+
+  // Panel activo + actualización automática/online de los cambios de estado.
+  if ($('#invDash')) {
+    DASHVIEW = { fn: 'inv', rango, modo, ref };
+    stopDashPoll();
+    DASH_POLL = setInterval(() => { if (!$('#invDash')) { stopDashPoll(); return; } if (!dashBusy()) viewInventarioDash(DASHVIEW.rango, DASHVIEW.modo, DASHVIEW.ref); }, 20000);
+  }
 }
 
 // ===================== Planificación y Ejecución de Entregas (maqueta) =====================
@@ -704,52 +731,83 @@ const ENTP_CSS = `
 .entp .ed .qa button.bl{background:#eef4ff;border-color:#cfe0ff;color:#2563eb}
 .entp .ed .qa button.rd{background:#fdeeee;border-color:#f6cccc;color:#dc2626}
 .entp .ed .foot{display:flex;gap:8px;margin-top:10px}
+.entp .alert.act{outline:2px solid #2563eb;outline-offset:1px}
+.entp .alert{cursor:pointer}
+.entp .cal .refpick{border:1px solid #d7dce3;border-radius:8px;padding:5px 9px;font-size:12.5px;background:#fff;color:#374151}
+.entp .flag{display:inline-flex;align-items:center;gap:5px;background:#eef4ff;color:#2563eb;border:1px solid #cfe0ff;border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:700;margin-left:8px}
+.entp .flag a{cursor:pointer;text-decoration:underline}
+.entp .nextit .dt{font-size:10.5px;color:#2563eb;font-weight:700}
+.entp .plan h4{margin:12px 0 6px;font-size:13px;color:#374151}
+.entp .plan .ro{display:flex;gap:10px;align-items:center;padding:8px;border:1px solid #eef1f5;border-radius:9px;margin-bottom:6px;background:#f9fafb}
+.entp .plan .ro .sl{font-weight:800;color:#2563eb;font-size:13px;width:54px;flex:0 0 auto}
+.entp .plan .ro .bd b{font-size:12.5px}.entp .plan .ro .bd small{display:block;color:#6b7280;font-size:11px}
+.entp .plan .ro .tag{margin-left:auto;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:#fff5e6;color:#b45309}
 `;
-function viewEntregasPlan(rango = 'hoy') {
+function viewEntregasPlan(rango = 'hoy', ref = null, keep = null) {
   h(`<div class="entp"><style>${ENTP_CSS}</style><div id="epRoot">Cargando…</div></div>`);
   (async () => {
     let d;
-    try { d = await api('/panol/dashboard?rango=' + rango); } catch (e) { $('#epRoot').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
+    try { d = await api('/panol/dashboard?rango=' + rango + (ref ? '&ref=' + ref : '')); } catch (e) { $('#epRoot').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
     const E = d.entregas;
     const rangoLabel = { hoy: 'hoy', semana: 'esta semana', mes: 'este mes' };
     const now = new Date(); const nowMs = now.getTime();
     const RES = id => 'RES-' + String(id).padStart(6, '0');
     const estadoDe = e => new Date(e.fecha_inicio).getTime() < nowMs ? ['Atrasada', 'atr'] : ['Confirmada', 'conf'];
-    // Alertas
-    const atrasadas = E.filter(e => new Date(e.fecha_inicio).getTime() < nowMs).length;
-    const sinUnidad = E.filter(e => e.por_individualizar && (!e.unidades || !e.unidades.length)).length;
-    let conflictos = 0;
+    const baseD = ref ? new Date(ref + 'T12:00:00') : new Date();
+    const isoDay = x => { const y = x.getFullYear(), m = ('0' + (x.getMonth() + 1)).slice(-2), dd = ('0' + x.getDate()).slice(-2); return `${y}-${m}-${dd}`; };
+    const fFecha = t => { try { return new Date(t).toLocaleDateString('es-CL', { weekday: 'short', day: '2-digit', month: 'short' }); } catch (e) { return ''; } };
+
+    // ===== Alertas operativas (banderas por entrega, para poder filtrar) =====
+    const esAtr = e => new Date(e.fecha_inicio).getTime() < nowMs;
+    const esSinU = e => e.por_individualizar && (!e.unidades || !e.unidades.length);
+    const conflSet = new Set();
     for (let i = 0; i < E.length; i++) for (let j = i + 1; j < E.length; j++) {
       const a = E[i], b = E[j];
-      if (new Date(a.fecha_inicio) < new Date(b.fecha_fin || b.fecha_inicio) && new Date(b.fecha_inicio) < new Date(a.fecha_fin || a.fecha_inicio)) { conflictos++; break; }
+      if (new Date(a.fecha_inicio) < new Date(b.fecha_fin || b.fecha_inicio) && new Date(b.fecha_inicio) < new Date(a.fecha_fin || a.fecha_inicio)) { conflSet.add(i); conflSet.add(j); }
     }
+    const atrasadas = E.filter(esAtr).length;
+    const sinUnidad = E.filter(esSinU).length;
+    const conflictos = conflSet.size;
     const vencidas = atrasadas; // sin gestión y fuera de plazo (aprox)
     const nAlert = atrasadas + vencidas + conflictos + sinUnidad;
 
-    // Timeline vertical 08–19.
+    // Filtro activo por alerta operativa (null = todas).
+    let filtro = keep && keep.filtro ? keep.filtro : null;
+    const matchFiltro = (e, i) => !filtro
+      || (filtro === 'atrasadas' && esAtr(e)) || (filtro === 'vencidas' && esAtr(e))
+      || (filtro === 'conflictos' && conflSet.has(i)) || (filtro === 'sinUnidad' && esSinU(e));
+    const idxVis = () => E.map((e, i) => i).filter(i => matchFiltro(E[i], i));
+
+    // Selección preservada por N° de reserva (sobrevive al auto-refresh).
+    let sel = (keep && keep.keepId != null) ? E.findIndex(e => e.id === keep.keepId) : (E.length ? 0 : -1);
+    if (sel < 0 && E.length && !(keep && keep.keepId != null)) sel = 0;
+
+    // ===== Timeline vertical 08–19 (vista Día) =====
     const AX0 = 8, AX1 = 19, SPAN = AX1 - AX0, H = 560;
     const topPx = t => { const dt = new Date(t); const hh = dt.getHours() + dt.getMinutes() / 60; return Math.max(0, Math.min(H, (hh - AX0) / SPAN * H)); };
     const colores = ['#3b82f6', '#8b5cf6', '#22c55e', '#06b6d4', '#ef4444', '#f59e0b'];
     const hrsLines = []; for (let hgt = AX0; hgt <= AX1; hgt++) { const y = (hgt - AX0) / SPAN * H; hrsLines.push(`<div class="hr" style="top:${y}px">${('0' + hgt).slice(-2)}:00</div>`); }
-    let sel = 0;
 
-    const evHtml = () => E.map((e, i) => {
+    const evHtml = () => idxVis().map(i => {
+      const e = E[i];
       const top = topPx(e.fecha_inicio);
       const dur = Math.max(0.6, (new Date(e.fecha_fin || e.fecha_inicio) - new Date(e.fecha_inicio)) / 3600000);
       const hgt = Math.max(42, dur / SPAN * H);
-      const [elab, ecls] = estadoDe(e);
+      const [elab] = estadoDe(e);
       return `<div class="ev ${i === sel ? 'sel' : ''}" data-i="${i}" style="top:${top}px;height:${hgt}px;background:${colores[i % colores.length]}">
         <div class="t1"><span>${RES(e.id)} · Entrega</span><span>${fmtHora(e.fecha_inicio)} – ${fmtHora(e.fecha_fin || e.fecha_inicio)}</span></div>
         <div class="t2">${escD(e.item)} (x1)</div>
         <span class="bg">${elab}</span></div>`;
     }).join('');
-    const nowLine = (() => { const nh = now.getHours() + now.getMinutes() / 60; if (nh < AX0 || nh > AX1) return ''; return `<div class="nowl" style="top:${topPx(now)}px"><span class="lb">Ahora ${fmtHora(now)}</span></div>`; })();
+    const esHoyBase = !ref || ref === isoDay(new Date());
+    const nowLine = (() => { if (!esHoyBase) return ''; const nh = now.getHours() + now.getMinutes() / 60; if (nh < AX0 || nh > AX1) return ''; return `<div class="nowl" style="top:${topPx(now)}px"><span class="lb">Ahora ${fmtHora(now)}</span></div>`; })();
     const vtHtml = () => `<div class="vt">${hrsLines.join('')}${evHtml()}${nowLine}</div>`;
-    // Vista Semana / Mes: lista agrupada por día.
+    // Vista Semana / Mes: lista agrupada por día (con fecha).
     const listHtml = () => {
-      if (!E.length) return '<p class="muted" style="font-size:12.5px;padding:8px">No hay entregas para ' + rangoLabel[rango] + '.</p>';
+      const vis = idxVis();
+      if (!vis.length) return '<p class="muted" style="font-size:12.5px;padding:8px">No hay entregas para ' + rangoLabel[rango] + (filtro ? ' con ese filtro' : '') + '.</p>';
       const grupos = {};
-      E.forEach((e, i) => { const k = new Date(e.fecha_inicio).toLocaleDateString('es-CL', { weekday: 'long', day: '2-digit', month: 'short' }); (grupos[k] = grupos[k] || []).push(i); });
+      vis.forEach(i => { const e = E[i]; const k = new Date(e.fecha_inicio).toLocaleDateString('es-CL', { weekday: 'long', day: '2-digit', month: 'short' }); (grupos[k] = grupos[k] || []).push(i); });
       return '<div style="max-height:600px;overflow:auto">' + Object.keys(grupos).map(k => `<div style="margin-bottom:6px">
         <div style="font-weight:700;font-size:12.5px;color:#374151;margin:8px 2px 4px">${cap(k)}</div>
         ${grupos[k].map(i => { const e = E[i]; const [elab, ecls] = estadoDe(e); return `<div class="nextit lstit" data-i="${i}" style="border-left:4px solid ${colores[i % colores.length]};padding-left:8px;${i === sel ? 'background:#eef4ff' : ''}">
@@ -757,49 +815,89 @@ function viewEntregasPlan(rango = 'hoy') {
           <span class="badge ${ecls}">${elab}</span></div>`; }).join('')}</div>`).join('') + '</div>';
     };
 
-    const nextHtml = E.length ? E.map((e, i) => {
-      const [elab, ecls] = estadoDe(e);
+    const nextHtml = () => { const vis = idxVis(); return vis.length ? vis.map(i => {
+      const e = E[i]; const [elab, ecls] = estadoDe(e);
       return `<div class="nextit" data-i="${i}"><div class="hr">${fmtHora(e.fecha_inicio)}</div>
-        <div class="bd"><b>${RES(e.id)}</b><small>${escD(e.item)} (x1)</small></div>
+        <div class="bd"><b>${RES(e.id)}</b><small>${escD(e.item)} (x1)</small><span class="dt">📅 ${fFecha(e.fecha_inicio)}</span></div>
         <span class="badge ${ecls}">${elab}</span></div>`;
-    }).join('') : '<p class="muted" style="font-size:12.5px">No hay entregas para hoy.</p>';
+    }).join('') : `<p class="muted" style="font-size:12.5px">No hay entregas para ${rangoLabel[rango]}${filtro ? ' con ese filtro' : ''}.</p>`; };
 
-    const alertRow = (cls, ic, t, s, n) => `<div class="alert ${cls}"><div style="font-size:16px">${ic}</div><div><b>${t} (${n})</b><small>${s}</small></div><span class="n">›</span></div>`;
+    const alertRow = (cls, ic, t, s, n, key) => `<div class="alert ${cls} ${filtro === key ? 'act' : ''}" data-flt="${key}"><div style="font-size:16px">${ic}</div><div><b>${t} (${n})</b><small>${s}</small></div><span class="n">›</span></div>`;
+    const navLbl = rango === 'hoy'
+      ? cap(baseD.toLocaleDateString('es-CL', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }))
+      : rango === 'semana'
+      ? 'Semana del ' + baseD.toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })
+      : cap(baseD.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' }));
 
     $('#epRoot').innerHTML = `
       <div class="ehead">
         <div class="ti"><div class="tk">🚚</div><div><h1>Planificación y Ejecución de Entregas</h1>
           <p>Gestiona las entregas programadas, prepara pedidos, confirma retiros y controla el estado de las reservas.</p></div></div>
-        <div class="btns"><button class="b gh">📅 Hoy</button><button class="b pri" id="epNueva">+ Nueva entrega</button></div>
+        <div class="btns"><button class="b gh" id="epHoy">📅 Hoy</button><button class="b pri" id="epAuto">✨ Automatizar planificación</button></div>
       </div>
       <div class="grid3">
         <div>
-          <div class="pnl"><h3>⚠️ Alertas operativas (${nAlert})</h3>
-            ${alertRow('r', '📅', 'Entregas atrasadas', 'No retiradas en el horario programado.', atrasadas)}
-            ${alertRow('o', '⏰', 'Reservas vencidas', 'Sin gestión y fuera del plazo.', vencidas)}
-            ${alertRow('y', '⚠️', 'Conflictos de horario', 'Entrega se superpone con otra.', conflictos)}
-            ${alertRow('p', '📦', 'Equipos no disponibles', 'Sin unidades disponibles para la fecha.', sinUnidad)}
+          <div class="pnl"><h3>⚠️ Alertas operativas (${nAlert}) ${filtro ? `<span class="flag">Filtrando · <a id="epFltClr">quitar</a></span>` : ''}</h3>
+            ${alertRow('r', '📅', 'Entregas atrasadas', 'No retiradas en el horario programado.', atrasadas, 'atrasadas')}
+            ${alertRow('o', '⏰', 'Reservas vencidas', 'Sin gestión y fuera del plazo.', vencidas, 'vencidas')}
+            ${alertRow('y', '⚠️', 'Conflictos de horario', 'Entrega se superpone con otra.', conflictos, 'conflictos')}
+            ${alertRow('p', '📦', 'Equipos no disponibles', 'Sin unidades disponibles para la fecha.', sinUnidad, 'sinUnidad')}
           </div>
-          <div class="pnl" style="margin-top:12px"><h3>📅 Próximas entregas (${rangoLabel[rango]}) <span style="color:#6b7280;font-weight:600">${E.length}</span></h3>
-            <div id="epNext">${nextHtml}</div>
+          <div class="pnl" style="margin-top:12px"><h3>📅 Próximas entregas (${rangoLabel[rango]}) <span style="color:#6b7280;font-weight:600">${idxVis().length}</span></h3>
+            <div id="epNext">${nextHtml()}</div>
           </div>
         </div>
         <div>
           <div class="pnl cal">
             <div class="caltop"><div class="seg"><button data-r="hoy" class="${rango === 'hoy' ? 'on' : ''}">Día</button><button data-r="semana" class="${rango === 'semana' ? 'on' : ''}">Semana</button><button data-r="mes" class="${rango === 'mes' ? 'on' : ''}">Mes</button></div>
-              <div class="nav"><button>‹</button>📅 ${rango === 'hoy' ? cap(new Date().toLocaleDateString('es-CL', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })) : cap(rangoLabel[rango])}<button>›</button></div></div>
+              <div class="nav"><button id="epPrev">‹</button>📅 ${navLbl}<button id="epNext2">›</button>
+                ${rango === 'hoy' ? '' : `<input type="date" class="refpick" id="epRef" value="${isoDay(baseD)}" title="Elegir ${rango === 'semana' ? 'la semana' : 'el mes'}">`}</div></div>
             <div id="epCenter">${rango === 'hoy' ? vtHtml() : listHtml()}</div>
           </div>
           <div class="chips">
-            <div class="chip"><div class="v">${E.length}</div><div class="l">🚚 Entregas ${rangoLabel[rango]}</div></div>
-            <div class="chip"><div class="v">0</div><div class="l">📦 Por preparar</div></div>
-            <div class="chip"><div class="v">0</div><div class="l">✅ Preparadas</div></div>
-            <div class="chip"><div class="v">${E.length - atrasadas}</div><div class="l">✔️ Confirmadas</div></div>
+            <div class="chip"><div class="v">${E.length}</div><div class="l">🚚 Programadas ${rangoLabel[rango]}</div></div>
+            <div class="chip"><div class="v">${E.length - atrasadas}</div><div class="l">📦 Por entregar</div></div>
             <div class="chip"><div class="v">${atrasadas}</div><div class="l">⚠️ Atrasadas</div></div>
+            <div class="chip"><div class="v">${d.entregas_hoy}</div><div class="l">✅ Entregadas hoy</div></div>
+            <div class="chip"><div class="v">${d.devoluciones.length}</div><div class="l">↩️ Devoluciones</div></div>
           </div>
         </div>
         <div class="pnl ed"><div id="epEditor"></div></div>
       </div>`;
+
+    // ===== Automatizar planificación: propone orden y horarios del día/semana/mes =====
+    const proponerPlan = () => {
+      if (!E.length) { openModal('<h3>✨ Planificación automática</h3><p class="muted">No hay entregas programadas para ' + rangoLabel[rango] + '.</p>'); return; }
+      const ord = E.map((e, i) => ({ e, i })).sort((a, b) => new Date(a.e.fecha_inicio) - new Date(b.e.fecha_inicio));
+      const porDia = {};
+      ord.forEach(({ e }) => { const k = new Date(e.fecha_inicio).toLocaleDateString('es-CL', { weekday: 'long', day: '2-digit', month: 'short' }); (porDia[k] = porDia[k] || []).push(e); });
+      let html = `<h3>✨ Planificación automática — ${rangoLabel[rango]}</h3>
+        <p class="muted" style="margin-top:0;font-size:12.5px">Propuesta de orden de preparación y horarios. No modifica las reservas; es una guía para el pañol.</p>`;
+      Object.keys(porDia).forEach(k => {
+        const items = porDia[k];
+        html += `<div class="plan"><h4>${cap(k)} · ${items.length} entrega${items.length === 1 ? '' : 's'}</h4>`;
+        let prevFin = null;
+        items.forEach((e, n) => {
+          const ini = new Date(e.fecha_inicio);
+          // Preparar 30 min antes del retiro.
+          const prep = new Date(ini.getTime() - 30 * 60000);
+          const choque = prevFin && ini < prevFin;
+          const sug = choque ? ' · escalonar +15 min' : '';
+          const tag = e.por_individualizar && (!e.unidades || !e.unidades.length) ? '<span class="tag">asignar unidad</span>'
+            : esAtr(e) ? '<span class="tag" style="background:#fdeeee;color:#dc2626">atrasada</span>' : '';
+          html += `<div class="ro"><div class="sl">${fmtHora(ini)}</div>
+            <div class="bd"><b>${n + 1}. ${RES(e.id)} — ${escD(e.item)}</b>
+            <small>${escD(e.estudiante)} · preparar antes de ${fmtHora(prep)}${sug}</small></div>${tag}</div>`;
+          prevFin = new Date(e.fecha_fin || e.fecha_inicio);
+        });
+        html += `</div>`;
+      });
+      html += `<button class="btn full" id="epPlanOk" style="margin-top:10px">Entendido</button>`;
+      openModal(html);
+      if ($('#epPlanOk')) $('#epPlanOk').onclick = closeModal;
+    };
+
+    const reload = () => viewEntregasPlan(rango, ref, { keepId: E[sel] ? E[sel].id : null, filtro });
 
     const renderEditor = () => {
       const e = E[sel];
@@ -861,12 +959,32 @@ function viewEntregasPlan(rango = 'hoy') {
 
     const renderCenter = () => { $('#epCenter').innerHTML = rango === 'hoy' ? vtHtml() : listHtml(); bindCenter(); };
     const bindCenter = () => { $('#epRoot').querySelectorAll('#epCenter .ev, #epCenter .lstit').forEach(b => b.onclick = () => selectIdx(Number(b.dataset.i))); };
-    const selectIdx = i => { sel = i; renderCenter(); renderEditor(); };
+    const selectIdx = i => { sel = i; renderCenter(); renderEditor(); DASHVIEW.keepId = E[sel] ? E[sel].id : null; };
     bindCenter();
     $('#epRoot').querySelectorAll('#epNext .nextit').forEach(b => b.onclick = () => selectIdx(Number(b.dataset.i)));
-    $('#epRoot').querySelectorAll('.cal .seg button').forEach(b => b.onclick = () => viewEntregasPlan(b.dataset.r));
-    $('#epNueva') && ($('#epNueva').onclick = () => toast('Las entregas se generan desde las reservas de los estudiantes'));
-    if (E.length) renderEditor(); else renderEditorEmpty();
+    // Tabs Día / Semana / Mes (la semana/el mes parten en la fecha actual).
+    $('#epRoot').querySelectorAll('.cal .seg button').forEach(b => b.onclick = () => viewEntregasPlan(b.dataset.r, null));
+    // Calendario: elegir la semana / el mes.
+    if ($('#epRef')) $('#epRef').onchange = () => { if ($('#epRef').value) viewEntregasPlan(rango, $('#epRef').value, { filtro }); };
+    // Navegación ‹ › (día ±1, semana ±7, mes ±1).
+    const shift = dir => { const x = new Date(baseD); if (rango === 'mes') x.setMonth(x.getMonth() + dir); else x.setDate(x.getDate() + dir * (rango === 'semana' ? 7 : 1)); viewEntregasPlan(rango, isoDay(x), { filtro }); };
+    if ($('#epPrev')) $('#epPrev').onclick = () => shift(-1);
+    if ($('#epNext2')) $('#epNext2').onclick = () => shift(1);
+    if ($('#epHoy')) $('#epHoy').onclick = () => viewEntregasPlan('hoy', null);
+    if ($('#epAuto')) $('#epAuto').onclick = proponerPlan;
+    // Filtros de alertas operativas (clic para filtrar, clic de nuevo para quitar).
+    $('#epRoot').querySelectorAll('.alert[data-flt]').forEach(a => a.onclick = () => {
+      const f = a.dataset.flt; viewEntregasPlan(rango, ref, { keepId: E[sel] ? E[sel].id : null, filtro: filtro === f ? null : f });
+    });
+    if ($('#epFltClr')) $('#epFltClr').onclick = () => viewEntregasPlan(rango, ref, { keepId: E[sel] ? E[sel].id : null, filtro: null });
+    if (E.length && sel >= 0) renderEditor(); else renderEditorEmpty();
+
+    // Panel activo + actualización automática/online de los cambios de estado.
+    if ($('#epRoot')) {
+      DASHVIEW = { fn: 'ep', rango, ref, keepId: E[sel] ? E[sel].id : null, filtro };
+      stopDashPoll();
+      DASH_POLL = setInterval(() => { if (!dashBusy() && $('#epRoot')) reload(); else if (!$('#epRoot')) stopDashPoll(); }, 20000);
+    }
   })();
 }
 
@@ -944,7 +1062,7 @@ function modalEntregar(a) {
         body.qr = $('#eQr').value.trim() || null;
       }
       await api('/entregar', { method: 'POST', body });
-      closeModal(); toast('Entrega registrada'); viewAgenda();
+      closeModal(); toast('Entrega registrada'); reloadDash(viewAgenda);
     } catch (e) { $('#eErr').textContent = e.message; }
   };
 }
@@ -975,7 +1093,7 @@ function modalRecibir(p) {
       condicion_retorno: $('#cCond').value, observacion: $('#cObs').value.trim() || null } });
     closeModal();
     toast(r.requiere_reposicion ? 'Devolución con daño: bloqueo por reposición aplicado' : 'Devolución registrada');
-    viewRecibir();
+    reloadDash(viewRecibir);
   };
 }
 

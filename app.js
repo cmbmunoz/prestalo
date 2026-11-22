@@ -704,17 +704,18 @@ app.get('/api/panol/dashboard', auth, requireRole(...OPERACION), wrap(async (req
      WHERE r.estado IN ('confirmada','en_uso') AND COALESCE(e.entidad_id,u.entidad_id)=$1
        AND r.fecha_inicio >= ${ini} AND r.fecha_inicio < ${fin}`);
   const prog_hoy    = await rng("current_date", "current_date + interval '1 day'");
-  const prog_semana = await rng("date_trunc('week', current_date)", "date_trunc('week', current_date) + interval '7 day'");
+  const prog_semana = await rng("current_date", "current_date + interval '7 day'");               // semana móvil (7 días desde hoy)
   const prog_mes    = await rng("date_trunc('month', current_date)", "date_trunc('month', current_date) + interval '1 month'");
 
   // Rango seleccionado (tabs Hoy / Esta semana / Este mes) y fecha de referencia
   // elegida con el calendario (semana/mes que se quiere ver). Por defecto: hoy.
   const rango = ['semana', 'mes'].includes(req.query.rango) ? req.query.rango : 'hoy';
   const ref = (req.query.ref && /^\d{4}-\d{2}-\d{2}$/.test(req.query.ref)) ? req.query.ref : null;
-  // $2 = fecha de referencia (null => current_date). Semana ISO (lunes) y mes calendario.
+  // $2 = fecha de referencia (null => current_date). La SEMANA parte en la fecha de
+  // referencia (ventana móvil de 7 días, no necesariamente lunes); el MES es calendario.
   const RD = "COALESCE($2::date, current_date)";
   const cond = rango === 'semana'
-    ? `r.fecha_inicio >= date_trunc('week', ${RD}) AND r.fecha_inicio < date_trunc('week', ${RD}) + interval '7 day'`
+    ? `r.fecha_inicio::date >= ${RD} AND r.fecha_inicio::date < ${RD} + interval '7 day'`
     : rango === 'mes'
     ? `r.fecha_inicio >= date_trunc('month', ${RD}) AND r.fecha_inicio < date_trunc('month', ${RD}) + interval '1 month'`
     : `r.fecha_inicio::date = ${RD}`;
