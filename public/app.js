@@ -1210,14 +1210,14 @@ async function viewSolicitudes() {
     <div style="display:flex;gap:8px;align-items:center"><b style="flex:1">${escD(s.asignatura||'Solicitud general')}</b><span class="pill ${s.estado==='aprobada'?'ok':s.estado==='rechazada'?'bad':'warn'}">${s.estado}</span></div>
     <p style="font-size:13px;margin:8px 0 4px">${escD(s.descripcion)}</p>
     ${(s.fecha_inicio||s.fecha_fin)?`<p class="muted" style="font-size:12.5px;margin:2px 0">📅 ${s.fecha_inicio?fmtDate(s.fecha_inicio):''}${s.fecha_fin?' → '+fmtDate(s.fecha_fin):''}${s.duracion?' · '+escD(s.duracion):''}</p>`:''}
-    ${(s.equipos&&s.equipos.length)?`<p class="muted" style="font-size:12.5px;margin:2px 0">📷 ${s.equipos.map(escD).join(', ')}</p>`:''}
+    ${(s.categorias&&s.categorias.length)?`<p class="muted" style="font-size:12.5px;margin:2px 0">📷 ${s.categorias.map(escD).join(', ')}</p>`:(s.equipos&&s.equipos.length)?`<p class="muted" style="font-size:12.5px;margin:2px 0">📷 ${s.equipos.map(escD).join(', ')}</p>`:''}
     ${s.respuesta?`<p class="muted" style="font-size:12.5px"><b>Respuesta:</b> ${escD(s.respuesta)}</p>`:''}
     <small class="muted">${fmtDate(s.created_at)}</small></div>`).join('') : '<p class="muted">No has enviado solicitudes.</p>';
 }
 function solicitudForm() {
   const asigs = ME.asignaturas || [];
-  const solicitados = [];     // {id, nombre, categoria}
-  let disponibles = [];       // equipos de la asignatura
+  const solicitados = [];     // {id, nombre} — categorías solicitadas
+  let disponibles = [];       // categorías elegibles de la asignatura
   h(`<h2 class="page">Nueva solicitud especial</h2>
     <div class="dash-grid">
       <div class="panel"><h3>📘 Información</h3>
@@ -1229,9 +1229,9 @@ function solicitudForm() {
         <div class="err" id="sE"></div>
         <div style="text-align:right"><button class="btn" id="sOk">Crear</button></div>
       </div>
-      <div class="panel"><h3>📷 Equipos solicitados</h3><div id="sSel"></div></div>
+      <div class="panel"><h3>📷 Categorías solicitadas</h3><div id="sSel"></div></div>
     </div>
-    <div class="panel" style="margin-top:14px"><h3>Equipos disponibles para la asignatura</h3><div id="sDisp"><p class="muted">Selecciona una asignatura para ver sus equipos.</p></div></div>`);
+    <div class="panel" style="margin-top:14px"><h3>Categorías disponibles para la asignatura</h3><p class="muted" style="font-size:11.5px;margin-top:-4px">Se pide por categoría; el pañol asigna la unidad al entregar.</p><div id="sDisp"><p class="muted">Selecciona una asignatura para ver sus categorías.</p></div></div>`);
 
   const calcDur = () => {
     const fi = $('#sFi').value, hi = $('#sHi').value, ff = $('#sFf').value, hf = $('#sHf').value;
@@ -1245,25 +1245,25 @@ function solicitudForm() {
 
   const renderSel = () => {
     $('#sSel').innerHTML = solicitados.length
-      ? `<table><thead><tr><th>Foto</th><th>Nombre</th><th>Operación</th></tr></thead><tbody>${solicitados.map(e => `<tr>
-          <td style="font-size:20px">${icon(e.categoria)}</td><td>${escD(e.nombre)}</td>
-          <td><button class="btn sm ghost danger" data-q="${e.id}">Quitar</button></td></tr>`).join('')}</tbody></table>`
-      : '<p class="muted">Aún no agregas equipos. Agrégalos desde la lista inferior.</p>';
+      ? `<table><thead><tr><th>Icono</th><th>Categoría</th><th>Operación</th></tr></thead><tbody>${solicitados.map(c => `<tr>
+          <td style="font-size:20px">${icon(c.nombre)}</td><td>${escD(c.nombre)}</td>
+          <td><button class="btn sm ghost danger" data-q="${c.id}">Quitar</button></td></tr>`).join('')}</tbody></table>`
+      : '<p class="muted">Aún no agregas categorías. Agrégalas desde la lista inferior.</p>';
     $('#sSel').querySelectorAll('[data-q]').forEach(b => b.onclick = () => {
       const i = solicitados.findIndex(x => String(x.id) === b.dataset.q);
       if (i >= 0) solicitados.splice(i, 1); renderSel(); renderDisp();
     });
   };
   const renderDisp = () => {
-    const libres = disponibles.filter(e => !solicitados.some(s => s.id === e.id));
+    const libres = disponibles.filter(c => !solicitados.some(s => s.id === c.id));
     $('#sDisp').innerHTML = libres.length
-      ? `<table><thead><tr><th>Foto</th><th>Nombre</th><th>Categoría</th><th>Operación</th></tr></thead><tbody>${libres.map(e => `<tr>
-          <td style="font-size:20px">${icon(e.categoria)}</td><td>${escD(e.nombre)}</td><td>${escD(e.categoria || '')}</td>
-          <td><button class="btn sm" data-a="${e.id}" ${e.estado !== 'disponible' ? 'disabled title="No disponible"' : ''}>Agregar</button></td></tr>`).join('')}</tbody></table>`
-      : (disponibles.length ? '<p class="muted">Todos los equipos ya fueron agregados.</p>' : '<p class="muted">No hay equipos habilitados para esta asignatura.</p>');
+      ? `<table><thead><tr><th>Icono</th><th>Categoría</th><th>Disponibles</th><th>Operación</th></tr></thead><tbody>${libres.map(c => `<tr>
+          <td style="font-size:20px">${icon(c.nombre)}</td><td>${escD(c.nombre)}</td><td>${c.disponibles} / ${c.total}</td>
+          <td><button class="btn sm" data-a="${c.id}" ${c.disponibles < 1 ? 'disabled title="Sin unidades disponibles"' : ''}>Agregar</button></td></tr>`).join('')}</tbody></table>`
+      : (disponibles.length ? '<p class="muted">Todas las categorías ya fueron agregadas.</p>' : '<p class="muted">No hay categorías habilitadas para esta asignatura.</p>');
     $('#sDisp').querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
-      const e = disponibles.find(x => String(x.id) === b.dataset.a);
-      if (e && !solicitados.some(s => s.id === e.id)) solicitados.push({ id: e.id, nombre: e.nombre, categoria: e.categoria });
+      const c = disponibles.find(x => String(x.id) === b.dataset.a);
+      if (c && !solicitados.some(s => s.id === c.id)) solicitados.push({ id: c.id, nombre: c.nombre });
       renderSel(); renderDisp();
     });
   };
@@ -1272,8 +1272,8 @@ function solicitudForm() {
   $('#sAsig').onchange = async () => {
     const aid = $('#sAsig').value;
     if (!aid) { disponibles = []; renderDisp(); return; }
-    $('#sDisp').innerHTML = '<p class="muted">Cargando equipos…</p>';
-    try { disponibles = await api('/asignaturas/' + aid + '/equipos'); }
+    $('#sDisp').innerHTML = '<p class="muted">Cargando categorías…</p>';
+    try { disponibles = await api('/asignaturas/' + aid + '/categorias'); }
     catch (e) { disponibles = []; $('#sDisp').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
     renderDisp();
   };
@@ -1289,7 +1289,7 @@ function solicitudForm() {
     try {
       await api('/solicitudes', { method: 'POST', body: {
         asignatura_id, descripcion, fecha_inicio, fecha_fin,
-        duracion: $('#sDur').value || null, equipos: solicitados.map(e => e.id),
+        duracion: $('#sDur').value || null, categorias: solicitados.map(c => c.id),
       }});
       toast('Solicitud creada'); viewSolicitudes();
     } catch (e) { $('#sE').textContent = e.message || 'Error'; }
@@ -1303,7 +1303,7 @@ async function viewSolicDocente() {
     <div style="display:flex;gap:8px;align-items:center"><b style="flex:1">${escD(s.alumno)}</b><small class="muted">${escD(s.asignatura||'')}</small></div>
     <p style="font-size:13px;margin:8px 0">${escD(s.descripcion)}</p>
     ${(s.fecha_inicio||s.fecha_fin)?`<p class="muted" style="font-size:12.5px;margin:2px 0">📅 ${s.fecha_inicio?fmtDate(s.fecha_inicio):''}${s.fecha_fin?' → '+fmtDate(s.fecha_fin):''}${s.duracion?' · '+escD(s.duracion):''}</p>`:''}
-    ${(s.equipos&&s.equipos.length)?`<p class="muted" style="font-size:12.5px;margin:2px 0 8px">📷 ${s.equipos.map(escD).join(', ')}</p>`:''}
+    ${(s.categorias&&s.categorias.length)?`<p class="muted" style="font-size:12.5px;margin:2px 0 8px">📷 ${s.categorias.map(escD).join(', ')}</p>`:(s.equipos&&s.equipos.length)?`<p class="muted" style="font-size:12.5px;margin:2px 0 8px">📷 ${s.equipos.map(escD).join(', ')}</p>`:''}
     <div style="display:flex;gap:8px"><button class="btn sm ap" data-id="${s.id}">Aprobar</button><button class="btn sm ghost danger rc" data-id="${s.id}">Rechazar</button></div>
   </div>`).join('');
   $('#sl').querySelectorAll('.ap').forEach(b=>b.onclick=()=>responderSolic(b.dataset.id,'aprobada'));

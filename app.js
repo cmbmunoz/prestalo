@@ -1601,7 +1601,7 @@ app.get('/api/asignaturas/:id/categorias', auth, wrap(async (req, res) => {
 }));
 
 app.post('/api/solicitudes', auth, wrap(async (req, res) => {
-  const { asignatura_id, descripcion, fecha_inicio, fecha_fin, duracion, equipos } = req.body || {};
+  const { asignatura_id, descripcion, fecha_inicio, fecha_fin, duracion, equipos, categorias } = req.body || {};
   if (!descripcion || !descripcion.trim()) return res.status(400).json({ error: 'La descripción es obligatoria' });
 
   // Sede de la solicitud = sede del solicitante. Política del flujo excepcional por sede.
@@ -1653,6 +1653,15 @@ app.post('/api/solicitudes', auth, wrap(async (req, res) => {
       }
     } catch (e) { if (e.code !== '42P01') throw e; }
   }
+  // RF-11: categorías solicitadas (se piden por categoría, no por equipo individual).
+  const catsSol = Array.isArray(categorias) ? [...new Set(categorias.map(Number).filter(Boolean))] : [];
+  if (catsSol.length) {
+    try {
+      for (const cid of catsSol) {
+        await db.query(`INSERT INTO solicitud_categoria (solicitud_id, categoria_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [r.id, cid]);
+      }
+    } catch (e) { if (e.code !== '42P01') throw e; } // migración 18 aún sin aplicar
+  }
   res.status(201).json({ id: r.id });
 }));
 
@@ -1660,7 +1669,8 @@ app.get('/api/solicitudes/mias', auth, wrap(async (req, res) => {
   try {
     const { rows } = await db.query(
       `SELECT s.id, s.descripcion, s.estado, s.respuesta, s.created_at, s.fecha_inicio, s.fecha_fin, s.duracion, a.nombre AS asignatura,
-              COALESCE((SELECT array_agg(e.nombre ORDER BY e.nombre) FROM solicitud_equipo se JOIN equipo e ON e.id=se.equipo_id WHERE se.solicitud_id=s.id), '{}') AS equipos
+              COALESCE((SELECT array_agg(e.nombre ORDER BY e.nombre) FROM solicitud_equipo se JOIN equipo e ON e.id=se.equipo_id WHERE se.solicitud_id=s.id), '{}') AS equipos,
+              COALESCE((SELECT array_agg(c.nombre ORDER BY c.nombre) FROM solicitud_categoria sc JOIN categoria c ON c.id=sc.categoria_id WHERE sc.solicitud_id=s.id), '{}') AS categorias
        FROM solicitud_especial s LEFT JOIN asignatura a ON a.id=s.asignatura_id
        WHERE s.usuario_rut=$1 ORDER BY s.created_at DESC`, [req.user.rut]);
     return res.json(rows);
@@ -1692,7 +1702,8 @@ app.get('/api/solicitudes/pendientes', auth, requireRole('docente', 'jefe_panol'
   try {
     const { rows } = await db.query(
       `SELECT s.id, s.descripcion, s.estado, s.created_at, s.fecha_inicio, s.fecha_fin, s.duracion, u.nombre AS alumno, u.rut, a.nombre AS asignatura, en.nombre AS sede,
-              COALESCE((SELECT array_agg(e.nombre ORDER BY e.nombre) FROM solicitud_equipo se JOIN equipo e ON e.id=se.equipo_id WHERE se.solicitud_id=s.id), '{}') AS equipos
+              COALESCE((SELECT array_agg(e.nombre ORDER BY e.nombre) FROM solicitud_equipo se JOIN equipo e ON e.id=se.equipo_id WHERE se.solicitud_id=s.id), '{}') AS equipos,
+              COALESCE((SELECT array_agg(c.nombre ORDER BY c.nombre) FROM solicitud_categoria sc JOIN categoria c ON c.id=sc.categoria_id WHERE sc.solicitud_id=s.id), '{}') AS categorias
        ${baseRich}`, paramsRich);
     return res.json(rows);
   } catch (e) { if (e.code !== '42703' && e.code !== '42P01') throw e; } // migraciones 07/15 aún sin aplicar
@@ -1717,18 +1728,41 @@ app.post('/api/solicitudes/:id/responder', auth, requireRole('docente', 'jefe_pa
     `SELECT estado, usuario_rut, fecha_inicio, fecha_fin FROM solicitud_especial WHERE id=$1`, [req.params.id])).rows[0];
   if (!cur || cur.estado !== 'pendiente') return res.status(404).json({ error: 'Solicitud no encontrada o ya respondida' });
 
-  // "Según disponibilidad": al APROBAR con fechas, verificar que cada equipo esté libre
-  // en la ventana ANTES de materializar. Si choca, la solicitud queda pendiente.
+  // Lo solicitado: categorías (RF-11) y, por compatibilidad, equipos legados.
+  let cats = [];
+  try {
+    cats = (await db.query(`SELECT categoria_id FROM solicitud_categoria WHERE solicitud_id=$1`, [req.params.id])).rows.map(x => x.categoria_id);
+  } catch (e) { if (e.code !== '42P01') throw e; } // sin tabla solicitud_categoria (migración 18)
   let eqs = [];
-  if (estado === 'aprobada' && cur.fecha_inicio && cur.fecha_fin) {
+  if (!cats.length) {
     try {
       eqs = (await db.query(`SELECT equipo_id FROM solicitud_equipo WHERE solicitud_id=$1`, [req.params.id])).rows;
     } catch (e) { if (e.code !== '42P01') throw e; } // sin tabla solicitud_equipo (migración 07)
+  }
+
+  // Sede del solicitante (para la capacidad por categoría).
+  const su = (await db.query(`SELECT entidad_id FROM usuario WHERE rut=$1`, [cur.usuario_rut])).rows[0];
+  const sedeId = su ? su.entidad_id : null;
+
+  // "Según disponibilidad": verificar ANTES de materializar. Si no hay, queda pendiente.
+  if (estado === 'aprobada' && cur.fecha_inicio && cur.fecha_fin) {
+    for (const cid of cats) {
+      const disp = (await db.query(`SELECT count(*)::int n FROM equipo WHERE categoria_id=$1 AND entidad_id=$2 AND estado='disponible'`, [cid, sedeId])).rows[0].n;
+      let resCat = 0;
+      try {
+        resCat = (await db.query(
+          `SELECT count(*)::int n FROM reserva r JOIN usuario u ON u.rut=r.usuario_rut
+           WHERE r.categoria_id=$1 AND r.equipo_id IS NULL AND r.estado='confirmada' AND u.entidad_id=$2`, [cid, sedeId])).rows[0].n;
+      } catch (e) { if (e.code !== '42703') throw e; }
+      if (disp - resCat <= 0) {
+        const c = (await db.query(`SELECT nombre FROM categoria WHERE id=$1`, [cid])).rows[0];
+        return res.status(409).json({ error: `No hay unidades disponibles en la categoría "${c ? c.nombre : cid}". La solicitud queda pendiente.` });
+      }
+    }
     for (const row of eqs) {
       const choca = (await db.query(
-        `SELECT 1 FROM reserva
-          WHERE equipo_id=$1 AND estado IN ('pendiente','confirmada','en_uso')
-            AND fecha_fin > $2 AND fecha_inicio < $3 LIMIT 1`,
+        `SELECT 1 FROM reserva WHERE equipo_id=$1 AND estado IN ('pendiente','confirmada','en_uso')
+          AND fecha_fin > $2 AND fecha_inicio < $3 LIMIT 1`,
         [row.equipo_id, cur.fecha_inicio, cur.fecha_fin])).rows[0];
       if (choca) {
         const eq = (await db.query(`SELECT nombre FROM equipo WHERE id=$1`, [row.equipo_id])).rows[0];
@@ -1742,12 +1776,23 @@ app.post('/api/solicitudes/:id/responder', auth, requireRole('docente', 'jefe_pa
      WHERE id=$1 AND estado='pendiente'`, [req.params.id, estado, respuesta || null, req.user.rut]);
   if (!r.rowCount) return res.status(404).json({ error: 'Solicitud no encontrada o ya respondida' });
 
-  // Al APROBAR, la solicitud se materializa como reserva(s) confirmada(s), de modo que
-  // quede reflejada en la disponibilidad del equipo y en la recepción (agenda) del pañol.
+  // Al APROBAR se materializa como reserva(s) confirmada(s). Las de CATEGORÍA quedan sin
+  // unidad (el pañolero individualiza al entregar); las legadas por equipo lo marcan reservado.
   let reservas_creadas = 0;
-  if (estado === 'aprobada' && cur.fecha_inicio && cur.fecha_fin && eqs.length) {
+  if (estado === 'aprobada' && cur.fecha_inicio && cur.fecha_fin) {
+    const sol = (await db.query(`SELECT nombre FROM usuario WHERE rut=$1`, [cur.usuario_rut])).rows[0];
     try {
-      const sol = (await db.query(`SELECT nombre FROM usuario WHERE rut=$1`, [cur.usuario_rut])).rows[0];
+      for (const cid of cats) {
+        const nr = (await db.query(
+          `INSERT INTO reserva (usuario_rut, equipo_id, categoria_id, fecha_inicio, fecha_fin, estado, uso_academico, es_grupal, motivo)
+           VALUES ($1,NULL,$2,$3,$4,'confirmada',TRUE,FALSE,$5) RETURNING id`,
+          [cur.usuario_rut, cid, cur.fecha_inicio, cur.fecha_fin, `Solicitud especial #${req.params.id}`])).rows[0];
+        await db.query(
+          `INSERT INTO integrante (reserva_id, usuario_rut, nombre, rut, es_responsable)
+           VALUES ($1,$2,$3,$4,TRUE) ON CONFLICT (reserva_id, rut) DO NOTHING`,
+          [nr.id, cur.usuario_rut, sol ? sol.nombre : cur.usuario_rut, cur.usuario_rut]);
+        reservas_creadas++;
+      }
       for (const row of eqs) {
         const nr = (await db.query(
           `INSERT INTO reserva (usuario_rut, equipo_id, fecha_inicio, fecha_fin, estado, uso_academico, es_grupal, motivo)
@@ -1760,7 +1805,7 @@ app.post('/api/solicitudes/:id/responder', auth, requireRole('docente', 'jefe_pa
         await db.query(`UPDATE equipo SET estado='reservado' WHERE id=$1`, [row.equipo_id]);
         reservas_creadas++;
       }
-    } catch (e) { if (e.code !== '42703' && e.code !== '42P01') throw e; } // migración 07 no aplicada → se omite
+    } catch (e) { if (e.code !== '42703' && e.code !== '42P01') throw e; }
   }
   res.json({ ok: true, reservas_creadas });
 }));
