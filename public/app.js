@@ -411,7 +411,10 @@ const INVDASH_CSS = `
 .invd .datert{color:#374151;font-size:13px;display:flex;align-items:center;gap:6px;margin-top:8px}
 .invd .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
 @media(max-width:900px){.invd .kpis{grid-template-columns:repeat(2,1fr)}}
-.invd .kpi{border-radius:14px;padding:16px;display:flex;gap:12px;align-items:flex-start;position:relative;border:1px solid #eceff3}
+.invd .kpi{border-radius:14px;padding:16px;display:flex;gap:12px;align-items:flex-start;position:relative;border:1px solid #eceff3;cursor:pointer;transition:transform .08s}
+.invd .kpi:hover{transform:translateY(-1px)}
+.invd .kpi.sel{outline:3px solid #2563eb;outline-offset:1px}
+.invd .segs button{transition:background .1s}
 .invd .kpi .ico{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:20px;flex:0 0 auto}
 .invd .kpi .lb{font-size:12.5px;color:#4b5563;font-weight:600}
 .invd .kpi .vl{font-size:30px;font-weight:800;line-height:1.05;margin:2px 0}
@@ -462,50 +465,45 @@ function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
 function fmtFechaLarga(d) {
   try { return 'Hoy, ' + d.toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' }); } catch (e) { return ''; }
 }
-async function viewInventarioDash() {
+async function viewInventarioDash(rango = 'hoy', modo = 'programadas') {
   h(`<div class="invd"><style>${INVDASH_CSS}</style><div id="invDash">Cargando…</div></div>`);
   let d;
-  try { d = await api('/panol/dashboard'); } catch (e) { $('#invDash').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
+  try { d = await api('/panol/dashboard?rango=' + rango); } catch (e) { $('#invDash').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
+  const rangoLabel = { hoy: 'Hoy', semana: 'Esta semana', mes: 'Este mes' };
 
-  // Filas unificadas: entregas (pendientes) + devoluciones (esperadas).
-  const filas = [
-    ...d.entregas.map(a => ({ tipo: 'entrega', hora: a.fecha_inicio, estudiante: a.estudiante, asignatura: a.asignatura, item: a.item, por_individualizar: a.por_individualizar, ref: a })),
-    ...d.devoluciones.map(p => ({ tipo: 'devolucion', hora: p.esperada || p.fecha_salida, estudiante: p.estudiante, asignatura: '—', item: p.equipo, ref: p })),
-  ].sort((x, y) => new Date(x.hora) - new Date(y.hora));
-
-  // Línea de tiempo 08:00–19:00.
+  // Línea de tiempo del día (siempre HOY) 08:00–19:00.
   const AX0 = 8, AX1 = 19, SPAN = AX1 - AX0;
   const pos = t => { const dt = new Date(t); const hh = dt.getHours() + dt.getMinutes() / 60; return Math.max(0, Math.min(100, (hh - AX0) / SPAN * 100)); };
   const ejes = []; for (let hgt = AX0; hgt <= AX1; hgt++) ejes.push(('0' + hgt).slice(-2) + ':00');
-  const blkEnt = d.entregas.map(a => { const l = pos(a.fecha_inicio); const r = pos(a.fecha_fin || a.fecha_inicio); const w = Math.max(3, r - l); return `<div class="blk" style="left:${l}%;width:${w}%" title="${escD(a.estudiante)} · ${fmtHora(a.fecha_inicio)}"></div>`; }).join('');
+  const blkEnt = d.tl_entregas.map(a => { const l = pos(a.fecha_inicio); const r = pos(a.fecha_fin || a.fecha_inicio); const w = Math.max(3, r - l); return `<div class="blk" style="left:${l}%;width:${w}%" title="${escD(a.estudiante)} · ${fmtHora(a.fecha_inicio)}"></div>`; }).join('');
   const blkDev = d.devoluciones.map(p => { const l = pos(p.esperada || p.fecha_salida); return `<div class="blk" style="left:${l}%;width:4%" title="${escD(p.estudiante)}"></div>`; }).join('');
   const nowD = new Date(); const nowH = nowD.getHours() + nowD.getMinutes() / 60;
   const nowMark = (nowH >= AX0 && nowH <= AX1) ? `<div class="now" style="left:${pos(nowD)}%"><span class="pin">${fmtHora(nowD)}</span></div>` : '';
 
   const maxProg = Math.max(d.prog_hoy, d.prog_semana, d.prog_mes, 1);
   const prog = (lb, n) => `<div class="prog"><div class="t"><span>📅 ${lb}</span><b>${n} entregas</b></div><div class="track"><div class="fill" style="width:${Math.round(n / maxProg * 100)}%"></div></div></div>`;
-  const kpi = (cls, ic, lb, vl, sb) => `<div class="kpi ${cls}"><div class="ico">${ic}</div><div><div class="lb">${lb}</div><div class="vl">${vl}</div><div class="sb">${sb}</div></div><span class="chev">›</span></div>`;
+  const kpi = (cls, mod, ic, lb, vl, sb) => `<div class="kpi ${cls} ${modo === mod ? 'sel' : ''}" data-modo="${mod}"><div class="ico">${ic}</div><div><div class="lb">${lb}</div><div class="vl">${vl}</div><div class="sb">${sb}</div></div><span class="chev">›</span></div>`;
 
   $('#invDash').innerHTML = `
     <div class="ihead">
       <div><h1>Control de Inventario</h1><p>Gestión operativa de equipos, reservas y entregas del pañol</p></div>
       <div style="text-align:right">
-        <div class="segs"><button class="on">Hoy</button><button>Esta semana</button><button>Este mes</button></div>
+        <div class="segs"><button data-r="hoy" class="${rango === 'hoy' ? 'on' : ''}">Hoy</button><button data-r="semana" class="${rango === 'semana' ? 'on' : ''}">Esta semana</button><button data-r="mes" class="${rango === 'mes' ? 'on' : ''}">Este mes</button></div>
         <div class="datert">📅 ${cap(fmtFechaLarga(new Date()))}</div>
       </div>
     </div>
     <div class="kpis">
-      ${kpi('b', '📅', 'Reservas pendientes', d.reservas_pendientes, 'Por preparar y entregar')}
-      ${kpi('g', '✅', 'Entregas confirmadas', d.entregas_hoy, 'Entregadas hoy')}
-      ${kpi('p', '📦', 'Devoluciones esperadas', d.devoluciones_hoy, 'Programadas para hoy')}
-      ${kpi('r', '⚠️', 'Alertas de stock', d.alertas_stock, 'Equipos con stock bajo')}
+      ${kpi('b', 'pendientes', '📅', 'Reservas pendientes', d.reservas_pendientes, 'Por preparar y entregar')}
+      ${kpi('g', 'confirmadas', '✅', 'Entregas confirmadas', d.entregas_hoy, 'Entregadas hoy')}
+      ${kpi('p', 'devoluciones', '📦', 'Devoluciones esperadas', d.devoluciones_hoy, 'Programadas para hoy')}
+      ${kpi('r', 'stock', '⚠️', 'Alertas de stock', d.alertas_stock, 'Equipos con stock bajo')}
     </div>
     <div class="cols2">
       <div class="pnl"><h3>Entregas programadas</h3>${prog('Hoy', d.prog_hoy)}${prog('Esta semana', d.prog_semana)}${prog('Este mes', d.prog_mes)}</div>
       <div class="pnl"><h3>Línea de tiempo del día <span style="font-weight:500;color:#6b7280;font-size:13px">(Entregas y devoluciones)</span></h3>
         <div class="tl">
           <div class="axis">${ejes.map(e => `<span>${e}</span>`).join('')}</div>
-          <div class="lanelb">📦 Entregas (${d.entregas.length})</div>
+          <div class="lanelb">📦 Entregas (${d.tl_entregas.length})</div>
           <div class="lane ent">${blkEnt}${nowMark}</div>
           <div class="lanelb">↩️ Devoluciones (${d.devoluciones.length})</div>
           <div class="lane dev">${blkDev}</div>
@@ -515,54 +513,75 @@ async function viewInventarioDash() {
     <div class="filt">
       <div class="ft">🔽 Filtros</div>
       <div class="fg"><label>Sede</label><select id="fSede"><option>${escD((ME.sedes && (ME.sedes.find(s => s.id === SEDE) || {}).nombre) || 'Sede activa')}</option></select></div>
-      <div class="fg"><label>Estado</label><select id="fEstado"><option value="">Todos</option><option value="entrega">Pendiente</option><option value="devolucion">Devolución esperada</option></select></div>
-      <div class="fg"><label>Responsable</label><select id="fResp"><option value="">Todos</option></select></div>
-      <div class="fg"><label>Tipo de equipo</label><select id="fTipo"><option value="">Todos</option></select></div>
+      <div class="fg"><label>Vista</label><select id="fModo">
+        <option value="programadas">Programadas (entregas y devoluciones)</option>
+        <option value="pendientes">Reservas pendientes</option>
+        <option value="confirmadas">Entregas confirmadas (hoy)</option>
+        <option value="devoluciones">Devoluciones esperadas</option>
+        <option value="stock">Alertas de stock</option></select></div>
+      <div class="fg"><label>Buscar</label><input class="srch" id="tSrch" placeholder="Estudiante, asignatura o equipo…" style="min-width:220px"></div>
       <a id="fClear">Limpiar filtros</a>
     </div>
-    <div class="tbl">
-      <div class="tbh"><h3>📦 Entregas programadas – Hoy (<span id="tCount">${filas.length}</span>)</h3>
-        <input class="srch" id="tSrch" placeholder="Buscar por estudiante, asignatura o equipo…"></div>
-      <table><thead><tr>
-        <th>Hora ↕</th><th>Estudiante ↕</th><th>Asignatura ↕</th><th>Equipo o Kit ↕</th><th>Cantidad ↕</th><th>Estado ↕</th><th>Acciones</th>
-      </tr></thead><tbody id="invRows"></tbody></table>
-    </div>`;
+    <div class="tbl"><div id="invTblWrap"></div></div>`;
 
-  const pintarTabla = () => {
+  const renderTabla = () => {
     const q = ($('#tSrch').value || '').toLowerCase();
-    const fe = $('#fEstado').value;
-    const lista = filas.filter(f =>
-      (!fe || f.tipo === fe) &&
-      (!q || (f.estudiante + ' ' + f.asignatura + ' ' + f.item).toLowerCase().includes(q)));
-    $('#tCount').textContent = lista.length;
-    $('#invRows').innerHTML = lista.length ? lista.map((f, i) => {
-      const st = f.tipo === 'devolucion'
-        ? '<span class="st dev">↩️ Devolución esperada</span>'
-        : '<span class="st pend">📅 Pendiente</span>';
-      const acc = f.tipo === 'devolucion'
-        ? `<button class="ab pri rec" data-i="${i}">Recepcionar</button>`
-        : `<button class="ab pri ent" data-i="${i}">Entregar</button>`;
-      return `<tr>
-        <td>🕐 ${fmtHora(f.hora)}</td>
-        <td>${escD(f.estudiante)}</td>
-        <td>${escD(f.asignatura)}</td>
-        <td><span class="itico">${icon(f.ref.categoria || f.item)}</span>${escD(f.item)}${f.por_individualizar ? ' <span class="st pend" style="font-size:10px">por asignar</span>' : ''}</td>
-        <td style="text-align:center">1</td>
-        <td>${st}</td>
-        <td style="display:flex;gap:6px;align-items:center">${acc}<button class="dots">⋯</button></td></tr>`;
-    }).join('') : '<tr><td colspan="7" class="muted" style="padding:16px">No hay entregas ni devoluciones para hoy.</td></tr>';
-    // wiring
-    $('#invRows').querySelectorAll('.ent').forEach((b, i) => b.onclick = () => modalEntregar(visibles()[Number(b.dataset.i)].ref));
-    $('#invRows').querySelectorAll('.rec').forEach((b, i) => b.onclick = () => modalRecibir({ prestamo_id: visibles()[Number(b.dataset.i)].ref.id, equipo: visibles()[Number(b.dataset.i)].ref.equipo, codigo_qr: visibles()[Number(b.dataset.i)].ref.codigo_qr, n_serie: visibles()[Number(b.dataset.i)].ref.n_serie, marca: visibles()[Number(b.dataset.i)].ref.marca, modelo: visibles()[Number(b.dataset.i)].ref.modelo }));
-    function visibles() {
-      const q2 = ($('#tSrch').value || '').toLowerCase(); const fe2 = $('#fEstado').value;
-      return filas.filter(f => (!fe2 || f.tipo === fe2) && (!q2 || (f.estudiante + ' ' + f.asignatura + ' ' + f.item).toLowerCase().includes(q2)));
+    const tit = { programadas: 'Entregas programadas – ' + rangoLabel[rango], pendientes: 'Reservas pendientes (por entregar)', confirmadas: 'Entregas confirmadas hoy', devoluciones: 'Devoluciones esperadas', stock: 'Alertas de stock' }[modo];
+
+    if (modo === 'stock') {
+      const lista = (d.stock_bajo || []).filter(s => !q || (s.articulo + ' ' + s.categoria).toLowerCase().includes(q));
+      $('#invTblWrap').innerHTML = `<div class="tbh"><h3>⚠️ ${tit} (${lista.length})</h3></div>
+        <table><thead><tr><th>Artículo</th><th>Categoría</th><th>Disponibles</th><th>Total</th><th>Estado</th></tr></thead><tbody>${
+          lista.length ? lista.map(s => `<tr><td><span class="itico">${icon(s.categoria)}</span>${escD(s.articulo)}</td><td>${escD(s.categoria)}</td>
+            <td style="text-align:center">${s.disponibles}</td><td style="text-align:center">${s.total}</td>
+            <td><span class="st ${s.disponibles === 0 ? 'dev' : 'prep'}" style="${s.disponibles === 0 ? 'background:#fdeeee;color:#dc2626' : ''}">${s.disponibles === 0 ? 'Sin stock' : 'Stock bajo'}</span></td></tr>`).join('')
+          : '<tr><td colspan="5" class="muted" style="padding:16px">No hay artículos con stock bajo.</td></tr>'
+        }</tbody></table>`;
+      return;
     }
+
+    let filas;
+    if (modo === 'confirmadas') {
+      filas = (d.entregadas_hoy || []).map(p => ({ tipo: 'confirmada', hora: p.fecha_salida, estudiante: p.estudiante, asignatura: '—', item: p.equipo, categoria: p.categoria, ref: p }));
+    } else {
+      const ent = d.entregas.map(a => ({ tipo: 'entrega', hora: a.fecha_inicio, estudiante: a.estudiante, asignatura: a.asignatura, item: a.item, categoria: a.categoria, por_individualizar: a.por_individualizar, ref: a }));
+      const dev = d.devoluciones.map(p => ({ tipo: 'devolucion', hora: p.esperada || p.fecha_salida, estudiante: p.estudiante, asignatura: '—', item: p.equipo, categoria: p.categoria, ref: p }));
+      filas = modo === 'pendientes' ? ent : modo === 'devoluciones' ? dev : [...ent, ...dev];
+      filas.sort((x, y) => new Date(x.hora) - new Date(y.hora));
+    }
+    const lista = filas.filter(f => !q || (f.estudiante + ' ' + f.asignatura + ' ' + f.item).toLowerCase().includes(q));
+    $('#invTblWrap').innerHTML = `<div class="tbh"><h3>📦 ${tit} (${lista.length})</h3></div>
+      <table><thead><tr><th>Hora ↕</th><th>Estudiante ↕</th><th>Asignatura ↕</th><th>Equipo o Kit ↕</th><th>Cantidad ↕</th><th>Estado ↕</th><th>Acciones</th></tr></thead>
+      <tbody>${lista.length ? lista.map((f, i) => {
+        const st = f.tipo === 'devolucion' ? '<span class="st dev">↩️ Devolución esperada</span>'
+          : f.tipo === 'confirmada' ? '<span class="st conf">✅ Entregada</span>'
+          : '<span class="st pend">📅 Pendiente</span>';
+        const acc = f.tipo === 'devolucion' ? `<button class="ab pri rec" data-i="${i}">Recepcionar</button>`
+          : f.tipo === 'confirmada' ? ''
+          : `<button class="ab pri ent" data-i="${i}">Entregar</button>`;
+        return `<tr><td>🕐 ${fmtHora(f.hora)}</td><td>${escD(f.estudiante)}</td><td>${escD(f.asignatura)}</td>
+          <td><span class="itico">${icon(f.categoria || f.item)}</span>${escD(f.item)}${f.por_individualizar ? ' <span class="st pend" style="font-size:10px">por asignar</span>' : ''}</td>
+          <td style="text-align:center">1</td><td>${st}</td>
+          <td style="display:flex;gap:6px;align-items:center">${acc}<button class="dots">⋯</button></td></tr>`;
+      }).join('') : `<tr><td colspan="7" class="muted" style="padding:16px">No hay registros para ${rangoLabel[rango].toLowerCase()}.</td></tr>`}</tbody></table>`;
+    $('#invTblWrap').querySelectorAll('.ent').forEach(b => b.onclick = () => modalEntregar(lista[Number(b.dataset.i)].ref));
+    $('#invTblWrap').querySelectorAll('.rec').forEach(b => { const r = lista[Number(b.dataset.i)].ref; b.onclick = () => modalRecibir({ prestamo_id: r.id, equipo: r.equipo, codigo_qr: r.codigo_qr, n_serie: r.n_serie, marca: r.marca, modelo: r.modelo }); });
   };
-  $('#tSrch').oninput = pintarTabla;
-  $('#fEstado').onchange = pintarTabla;
-  $('#fClear').onclick = () => { $('#tSrch').value = ''; $('#fEstado').value = ''; pintarTabla(); };
-  pintarTabla();
+
+  // Tabs de rango → recarga con el rango.
+  $('#invDash').querySelectorAll('.segs button').forEach(b => b.onclick = () => viewInventarioDash(b.dataset.r, modo));
+  // KPIs como filtros del dashboard.
+  $('#invDash').querySelectorAll('.kpi').forEach(c => c.onclick = () => {
+    const m = c.dataset.modo; modo = (modo === m) ? 'programadas' : m;
+    $('#fModo').value = modo;
+    $('#invDash').querySelectorAll('.kpi').forEach(k => k.classList.toggle('sel', k.dataset.modo === modo));
+    renderTabla();
+  });
+  $('#fModo').onchange = () => { modo = $('#fModo').value; $('#invDash').querySelectorAll('.kpi').forEach(k => k.classList.toggle('sel', k.dataset.modo === modo)); renderTabla(); };
+  $('#tSrch').oninput = renderTabla;
+  $('#fClear').onclick = () => { modo = 'programadas'; $('#fModo').value = 'programadas'; $('#tSrch').value = ''; $('#invDash').querySelectorAll('.kpi').forEach(k => k.classList.remove('sel')); renderTabla(); };
+  $('#fModo').value = modo;
+  renderTabla();
 }
 
 // ===================== Planificación y Ejecución de Entregas (maqueta) =====================
@@ -624,12 +643,13 @@ const ENTP_CSS = `
 .entp .ed .qa button.rd{background:#fdeeee;border-color:#f6cccc;color:#dc2626}
 .entp .ed .foot{display:flex;gap:8px;margin-top:10px}
 `;
-function viewEntregasPlan() {
+function viewEntregasPlan(rango = 'hoy') {
   h(`<div class="entp"><style>${ENTP_CSS}</style><div id="epRoot">Cargando…</div></div>`);
   (async () => {
     let d;
-    try { d = await api('/panol/dashboard'); } catch (e) { $('#epRoot').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
+    try { d = await api('/panol/dashboard?rango=' + rango); } catch (e) { $('#epRoot').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
     const E = d.entregas;
+    const rangoLabel = { hoy: 'hoy', semana: 'esta semana', mes: 'este mes' };
     const now = new Date(); const nowMs = now.getTime();
     const RES = id => 'RES-' + String(id).padStart(6, '0');
     const estadoDe = e => new Date(e.fecha_inicio).getTime() < nowMs ? ['Atrasada', 'atr'] : ['Confirmada', 'conf'];
@@ -662,6 +682,18 @@ function viewEntregasPlan() {
         <span class="bg">${elab}</span></div>`;
     }).join('');
     const nowLine = (() => { const nh = now.getHours() + now.getMinutes() / 60; if (nh < AX0 || nh > AX1) return ''; return `<div class="nowl" style="top:${topPx(now)}px"><span class="lb">Ahora ${fmtHora(now)}</span></div>`; })();
+    const vtHtml = () => `<div class="vt">${hrsLines.join('')}${evHtml()}${nowLine}</div>`;
+    // Vista Semana / Mes: lista agrupada por día.
+    const listHtml = () => {
+      if (!E.length) return '<p class="muted" style="font-size:12.5px;padding:8px">No hay entregas para ' + rangoLabel[rango] + '.</p>';
+      const grupos = {};
+      E.forEach((e, i) => { const k = new Date(e.fecha_inicio).toLocaleDateString('es-CL', { weekday: 'long', day: '2-digit', month: 'short' }); (grupos[k] = grupos[k] || []).push(i); });
+      return '<div style="max-height:600px;overflow:auto">' + Object.keys(grupos).map(k => `<div style="margin-bottom:6px">
+        <div style="font-weight:700;font-size:12.5px;color:#374151;margin:8px 2px 4px">${cap(k)}</div>
+        ${grupos[k].map(i => { const e = E[i]; const [elab, ecls] = estadoDe(e); return `<div class="nextit lstit" data-i="${i}" style="border-left:4px solid ${colores[i % colores.length]};padding-left:8px;${i === sel ? 'background:#eef4ff' : ''}">
+          <div class="hr">${fmtHora(e.fecha_inicio)}</div><div class="bd"><b>${RES(e.id)}</b><small>${escD(e.item)} · ${escD(e.estudiante)}</small></div>
+          <span class="badge ${ecls}">${elab}</span></div>`; }).join('')}</div>`).join('') + '</div>';
+    };
 
     const nextHtml = E.length ? E.map((e, i) => {
       const [elab, ecls] = estadoDe(e);
@@ -686,18 +718,18 @@ function viewEntregasPlan() {
             ${alertRow('y', '⚠️', 'Conflictos de horario', 'Entrega se superpone con otra.', conflictos)}
             ${alertRow('p', '📦', 'Equipos no disponibles', 'Sin unidades disponibles para la fecha.', sinUnidad)}
           </div>
-          <div class="pnl" style="margin-top:12px"><h3>📅 Próximas entregas (hoy) <span style="color:#6b7280;font-weight:600">${E.length}</span></h3>
+          <div class="pnl" style="margin-top:12px"><h3>📅 Próximas entregas (${rangoLabel[rango]}) <span style="color:#6b7280;font-weight:600">${E.length}</span></h3>
             <div id="epNext">${nextHtml}</div>
           </div>
         </div>
         <div>
           <div class="pnl cal">
-            <div class="caltop"><div class="seg"><button class="on">Día</button><button>Semana</button><button>Mes</button></div>
-              <div class="nav"><button>‹</button>📅 ${cap(new Date().toLocaleDateString('es-CL', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }))}<button>›</button></div></div>
-            <div class="vt">${hrsLines.join('')}${evHtml()}${nowLine}</div>
+            <div class="caltop"><div class="seg"><button data-r="hoy" class="${rango === 'hoy' ? 'on' : ''}">Día</button><button data-r="semana" class="${rango === 'semana' ? 'on' : ''}">Semana</button><button data-r="mes" class="${rango === 'mes' ? 'on' : ''}">Mes</button></div>
+              <div class="nav"><button>‹</button>📅 ${rango === 'hoy' ? cap(new Date().toLocaleDateString('es-CL', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })) : cap(rangoLabel[rango])}<button>›</button></div></div>
+            <div id="epCenter">${rango === 'hoy' ? vtHtml() : listHtml()}</div>
           </div>
           <div class="chips">
-            <div class="chip"><div class="v">${E.length}</div><div class="l">🚚 Entregas de hoy</div></div>
+            <div class="chip"><div class="v">${E.length}</div><div class="l">🚚 Entregas ${rangoLabel[rango]}</div></div>
             <div class="chip"><div class="v">0</div><div class="l">📦 Por preparar</div></div>
             <div class="chip"><div class="v">0</div><div class="l">✅ Preparadas</div></div>
             <div class="chip"><div class="v">${E.length - atrasadas}</div><div class="l">✔️ Confirmadas</div></div>
@@ -765,10 +797,12 @@ function viewEntregasPlan() {
     };
     const renderEditorEmpty = () => { $('#epEditor').innerHTML = '<p class="muted" style="font-size:13px">Selecciona una entrega en la línea de tiempo o en “Próximas entregas”.</p>'; };
 
-    const selectIdx = i => { sel = i; $('.entp .vt').innerHTML = hrsLines.join('') + evHtml() + nowLine; bindTimeline(); renderEditor(); };
-    const bindTimeline = () => { $('#epRoot').querySelectorAll('.vt .ev').forEach(b => b.onclick = () => selectIdx(Number(b.dataset.i))); };
-    bindTimeline();
+    const renderCenter = () => { $('#epCenter').innerHTML = rango === 'hoy' ? vtHtml() : listHtml(); bindCenter(); };
+    const bindCenter = () => { $('#epRoot').querySelectorAll('#epCenter .ev, #epCenter .lstit').forEach(b => b.onclick = () => selectIdx(Number(b.dataset.i))); };
+    const selectIdx = i => { sel = i; renderCenter(); renderEditor(); };
+    bindCenter();
     $('#epRoot').querySelectorAll('#epNext .nextit').forEach(b => b.onclick = () => selectIdx(Number(b.dataset.i)));
+    $('#epRoot').querySelectorAll('.cal .seg button').forEach(b => b.onclick = () => viewEntregasPlan(b.dataset.r));
     $('#epNueva') && ($('#epNueva').onclick = () => toast('Las entregas se generan desde las reservas de los estudiantes'));
     if (E.length) renderEditor(); else renderEditorEmpty();
   })();

@@ -707,28 +707,41 @@ app.get('/api/panol/dashboard', auth, requireRole(...OPERACION), wrap(async (req
   const prog_semana = await rng("date_trunc('week', current_date)", "date_trunc('week', current_date) + interval '7 day'");
   const prog_mes    = await rng("date_trunc('month', current_date)", "date_trunc('month', current_date) + interval '1 month'");
 
-  const entregas = (await db.query(
-    `SELECT r.id, r.fecha_inicio, r.fecha_fin, u.nombre AS estudiante, u.rut,
-            COALESCE(ta.nombre,'—') AS asignatura,
-            COALESCE(ce.nombre, cr.nombre, e.nombre) AS item,
-            e.nombre AS equipo, e.codigo_qr, COALESCE(ce.nombre, cr.nombre) AS categoria,
-            (r.equipo_id IS NULL) AS por_individualizar, r.categoria_id
-     FROM reserva r JOIN usuario u ON u.rut=r.usuario_rut
-     LEFT JOIN equipo e ON e.id=r.equipo_id
-     LEFT JOIN categoria ce ON ce.id=e.categoria_id
-     LEFT JOIN categoria cr ON cr.id=r.categoria_id
-     LEFT JOIN tarea t ON t.id=r.tarea_id
-     LEFT JOIN asignatura ta ON ta.id=t.asignatura_id
-     WHERE r.estado='confirmada' AND COALESCE(e.entidad_id,u.entidad_id)=$1
-       AND r.fecha_inicio::date = current_date
-     ORDER BY r.fecha_inicio`, [sede])).rows;
-  for (const row of entregas) {
-    if (row.por_individualizar && row.categoria_id) {
-      row.unidades = (await db.query(
-        `SELECT id, nombre, codigo_qr FROM equipo WHERE categoria_id=$1 AND entidad_id=$2 AND estado='disponible' ORDER BY codigo_qr`,
-        [row.categoria_id, sede])).rows;
+  // Rango seleccionado (tabs Hoy / Esta semana / Este mes).
+  const rango = ['semana', 'mes'].includes(req.query.rango) ? req.query.rango : 'hoy';
+  const cond = rango === 'semana'
+    ? "r.fecha_inicio >= date_trunc('week', current_date) AND r.fecha_inicio < date_trunc('week', current_date) + interval '7 day'"
+    : rango === 'mes'
+    ? "r.fecha_inicio >= date_trunc('month', current_date) AND r.fecha_inicio < date_trunc('month', current_date) + interval '1 month'"
+    : "r.fecha_inicio::date = current_date";
+
+  const entregasDe = async (whereRango) => {
+    const rows = (await db.query(
+      `SELECT r.id, r.fecha_inicio, r.fecha_fin, u.nombre AS estudiante, u.rut,
+              COALESCE(ta.nombre,'—') AS asignatura,
+              COALESCE(ce.nombre, cr.nombre, e.nombre) AS item,
+              e.nombre AS equipo, e.codigo_qr, COALESCE(ce.nombre, cr.nombre) AS categoria,
+              (r.equipo_id IS NULL) AS por_individualizar, r.categoria_id
+       FROM reserva r JOIN usuario u ON u.rut=r.usuario_rut
+       LEFT JOIN equipo e ON e.id=r.equipo_id
+       LEFT JOIN categoria ce ON ce.id=e.categoria_id
+       LEFT JOIN categoria cr ON cr.id=r.categoria_id
+       LEFT JOIN tarea t ON t.id=r.tarea_id
+       LEFT JOIN asignatura ta ON ta.id=t.asignatura_id
+       WHERE r.estado='confirmada' AND COALESCE(e.entidad_id,u.entidad_id)=$1 AND ${whereRango}
+       ORDER BY r.fecha_inicio`, [sede])).rows;
+    for (const row of rows) {
+      if (row.por_individualizar && row.categoria_id) {
+        row.unidades = (await db.query(
+          `SELECT id, nombre, codigo_qr FROM equipo WHERE categoria_id=$1 AND entidad_id=$2 AND estado='disponible' ORDER BY codigo_qr`,
+          [row.categoria_id, sede])).rows;
+      }
     }
-  }
+    return rows;
+  };
+  const entregas = await entregasDe(cond);                                   // según el rango (tabla / vista semana-mes)
+  const tl_entregas = rango === 'hoy' ? entregas : await entregasDe("r.fecha_inicio::date = current_date"); // línea de tiempo del día
+
   const devoluciones = (await db.query(
     `SELECT p.id, p.fecha_salida, r.fecha_fin AS esperada, u.nombre AS estudiante,
             e.nombre AS equipo, e.codigo_qr, e.n_serie, e.marca, e.modelo, c.nombre AS categoria
@@ -738,7 +751,31 @@ app.get('/api/panol/dashboard', auth, requireRole(...OPERACION), wrap(async (req
      WHERE e.entidad_id=$1 AND p.estado IN ('abierto','atrasado')
        AND (r.fecha_fin IS NULL OR r.fecha_fin::date <= current_date)
      ORDER BY r.fecha_fin NULLS LAST`, [sede])).rows;
-  res.json({ reservas_pendientes, entregas_hoy, devoluciones_hoy, alertas_stock, prog_hoy, prog_semana, prog_mes, entregas, devoluciones });
+
+  // Entregas ya confirmadas hoy (préstamos de hoy) — para el filtro de KPI.
+  const entregadas_hoy = (await db.query(
+    `SELECT p.id, p.fecha_salida, u.nombre AS estudiante, e.nombre AS equipo, c.nombre AS categoria
+     FROM prestamo p JOIN usuario u ON u.rut=p.usuario_rut
+     JOIN equipo e ON e.id=p.equipo_id JOIN categoria c ON c.id=e.categoria_id
+     WHERE e.entidad_id=$1 AND p.fecha_salida::date = current_date
+     ORDER BY p.fecha_salida`, [sede])).rows;
+
+  // Artículos con stock bajo (≤1 disponible) — para el filtro de KPI.
+  let stock_bajo = [];
+  try {
+    stock_bajo = (await db.query(
+      `SELECT c.nombre AS categoria, e.nombre AS articulo,
+              count(*) FILTER (WHERE e.estado='disponible')::int AS disponibles,
+              count(*)::int AS total
+       FROM equipo e JOIN categoria c ON c.id=e.categoria_id
+       WHERE e.entidad_id=$1 AND e.tipo='equipo'
+       GROUP BY c.nombre, e.nombre
+       HAVING count(*) FILTER (WHERE e.estado='disponible') <= 1
+       ORDER BY disponibles, c.nombre`, [sede])).rows;
+  } catch (e) { /* tolerante */ }
+
+  res.json({ rango, reservas_pendientes, entregas_hoy, devoluciones_hoy, alertas_stock,
+    prog_hoy, prog_semana, prog_mes, entregas, tl_entregas, devoluciones, entregadas_hoy, stock_bajo });
 }));
 
 // Historial de entregas (préstamos) de la sede.
