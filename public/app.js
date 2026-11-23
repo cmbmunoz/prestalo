@@ -871,18 +871,18 @@ function viewEntregasPlan(rango = 'hoy', ref = null, keep = null, opts = {}) {
       const hrsArr = vis.map(i => { const x = new Date(E[i].fecha_inicio); return x.getHours() + x.getMinutes() / 60; });
       const h0 = Math.max(5, Math.min(8, Math.floor(Math.min(...hrsArr))));
       const h1 = Math.min(23, Math.max(19, Math.ceil(Math.max(...hrsArr)) + 1));
-      const SPAN = h1 - h0, H = Math.max(520, SPAN * 54);
+      const SPAN = h1 - h0, H = Math.max(600, SPAN * 62);   // 1 hora ≈ 62px
       const topPx = t => { const x = new Date(t); const hh = x.getHours() + x.getMinutes() / 60; return Math.max(0, Math.min(H - 10, (hh - h0) / SPAN * H)); };
       let hrs = ''; for (let hh = h0; hh <= h1; hh++) { const y = (hh - h0) / SPAN * H; hrs += `<div class="hr" style="top:${y}px">${('0' + hh).slice(-2)}:00</div>`; }
-      // Reparto en columnas según solapamiento temporal.
-      const its = vis.map(i => { const s = new Date(E[i].fecha_inicio).getTime(); let f = new Date(E[i].fecha_fin || E[i].fecha_inicio).getTime(); if (!(f > s)) f = s + 60 * 60000; f = Math.min(f, s + 3 * 3600000); return { i, s, f }; }).sort((a, b) => a.s - b.s);
+      // Reparto en columnas: cada pedido ocupa como MÁXIMO 1 hora (como la maqueta).
+      const its = vis.map(i => { const s = new Date(E[i].fecha_inicio).getTime(); const f = s + 60 * 60000; return { i, s, f }; }).sort((a, b) => a.s - b.s);
       const colEnd = [];
       its.forEach(it => { let c = 0; while (c < colEnd.length && colEnd[c] > it.s) c++; it.col = c; colEnd[c] = it.f; });
       const ncol = Math.max(1, colEnd.length);
       const LEFT = 52; // ancho de la columna de horas
       const cards = its.map(it => {
         const e = E[it.i]; const u = urgencia(e); const top = topPx(e.fecha_inicio);
-        const hgt = Math.max(62, Math.min(H - top, (it.f - it.s) / 3600000 / SPAN * H));
+        const hgt = Math.min(H - top, 62);   // nunca más de 1 hora por pedido
         const wpct = 100 / ncol; const leftPct = it.col * wpct;
         return `<div class="ev ${u.cls} ${it.i === sel ? 'sel' : ''}" data-i="${it.i}"
           style="top:${top}px;height:${hgt}px;left:calc(${LEFT}px + ${leftPct}% - ${LEFT * leftPct / 100}px + 2px);width:calc(${wpct}% - ${LEFT * wpct / 100}px - 6px)">
