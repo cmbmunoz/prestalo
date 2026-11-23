@@ -1123,7 +1123,9 @@ const HIST_CSS = `
 .hist .hhd p{margin:3px 0 0;color:#64748b;font-size:13px}
 .hist .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px}
 @media(max-width:1000px){.hist .kpis{grid-template-columns:repeat(2,1fr)}}
-.hist .k{position:relative;border-radius:14px;padding:16px;border:1px solid #eceff4;display:flex;gap:12px;align-items:flex-start}
+.hist .k{position:relative;border-radius:14px;padding:16px;border:1px solid #eceff4;display:flex;gap:12px;align-items:flex-start;cursor:pointer;transition:transform .08s}
+.hist .k:hover{transform:translateY(-1px)}
+.hist .k.sel{outline:3px solid #0d9488;outline-offset:1px}
 .hist .k .ic{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;flex:0 0 auto}
 .hist .k .lb{font-size:12.5px;color:#475569;font-weight:600}
 .hist .k .vl{font-size:30px;font-weight:800;line-height:1.05;margin:2px 0}
@@ -1145,8 +1147,8 @@ const HIST_CSS = `
 .hist .tbar .srch::before{content:"🔎";position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:13px;opacity:.6}
 .hist .tbar .b{height:40px;border:1px solid #d7dce3;background:#fff;border-radius:10px;padding:0 14px;font-size:13px;font-weight:700;cursor:pointer;color:#334155;display:flex;align-items:center;gap:7px}
 .hist .tbar .b.tl{background:#0d9488;border-color:#0d9488;color:#fff}
-.hist .grid{display:grid;grid-template-columns:1fr 340px;gap:14px;align-items:start}
-@media(max-width:1050px){.hist .grid{grid-template-columns:1fr}}
+.hist .grid{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:14px;align-items:start}
+@media(max-width:1150px){.hist .grid{grid-template-columns:1fr}}
 .hist .card{background:#fff;border:1px solid #eceff4;border-radius:14px;overflow:hidden}
 .hist .tw{overflow-x:auto}
 .hist table{width:100%;border-collapse:collapse;min-width:720px}
@@ -1175,7 +1177,11 @@ const HIST_CSS = `
 .hist .pag .pg button:disabled{opacity:.45;cursor:default}
 .hist .pag .mut{color:#64748b;font-size:12.5px}
 /* Panel de detalle lateral */
-.hist .dp{background:#fff;border:1px solid #eceff4;border-radius:14px;padding:16px;position:sticky;top:12px}
+.hist .dp{background:#fff;border:1px solid #eceff4;border-radius:14px;padding:16px;position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}
+.hist .dp .kgrid{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px}
+.hist .dp .kgrid.one{grid-template-columns:1fr}
+.hist .dp .kv .l{color:#64748b;display:block;font-size:11px}
+.hist .dp .sech{font-size:12px;font-weight:800;color:#0f172a;text-transform:none;margin-bottom:4px;display:flex;align-items:center;gap:6px}
 .hist .dp .dh{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
 .hist .dp .dh b{font-size:15px}
 .hist .dp .x{border:0;background:transparent;font-size:18px;color:#94a3b8;cursor:pointer}
@@ -1250,13 +1256,17 @@ async function viewHistorialEntregas() {
   try { d = await api('/entregas/historial'); } catch (e) { $('#histRoot').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
   const rows = Array.isArray(d) ? d : (d.rows || []);
   const kpis = (d && d.kpis) || { realizadas: rows.length, pendientes: 0, atrasadas: 0, incidencias: 0 };
-  HIST = { rows, kpis, page: 1, perPage: 8, sel: null, fEstado: 'todos', fResp: 'todos', fDesde: '', fHasta: '', q: '' };
+  HIST = { rows, kpis, page: 1, perPage: 8, sel: null, fEstado: 'todos', fResp: 'todos', fDesde: '', fHasta: '', q: '', fKpi: null };
   renderHist();
 }
 
 function histFiltradas() {
   const H = HIST; const q = (H.q || '').toLowerCase();
   return H.rows.filter(r => {
+    if (H.fKpi === 'realizadas' && r.id == null) return false;              // realizadas = con préstamo
+    if (H.fKpi === 'pendientes' && r.id != null) return false;             // pendientes = sin préstamo
+    if (H.fKpi === 'atrasadas' && r.estado !== 'atrasada') return false;
+    if (H.fKpi === 'incidencias' && !r.incidencia) return false;
     if (H.fEstado !== 'todos' && r.estado !== H.fEstado) return false;
     if (H.fResp !== 'todos' && (r.panolero || '') !== H.fResp) return false;
     if (H.fDesde && (!r.programada || new Date(r.programada) < new Date(H.fDesde))) return false;
@@ -1272,10 +1282,10 @@ function renderHist() {
   $('#histRoot').innerHTML = `
     <div class="hhd"><div><h1>Historial de entregas</h1><p>Registro y trazabilidad de todas las entregas realizadas por el pañol.</p></div></div>
     <div class="kpis">
-      <div class="k g"><div class="ic">✅</div><div><div class="lb">Entregas realizadas</div><div class="vl">${k.realizadas.toLocaleString('es-CL')}</div><div class="sb">Total del período</div></div></div>
-      <div class="k b"><div class="ic">📅</div><div><div class="lb">Entregas pendientes</div><div class="vl">${k.pendientes}</div><div class="sb">Por entregar</div></div></div>
-      <div class="k r"><div class="ic">⏰</div><div><div class="lb">Entregas atrasadas</div><div class="vl">${k.atrasadas}</div><div class="sb">Fuera del horario programado</div></div></div>
-      <div class="k a"><div class="ic">⚠️</div><div><div class="lb">Incidencias</div><div class="vl">${k.incidencias}</div><div class="sb">Con observaciones o daños</div></div></div>
+      <div class="k g ${H.fKpi === 'realizadas' ? 'sel' : ''}" data-kpi="realizadas"><div class="ic">✅</div><div><div class="lb">Entregas realizadas</div><div class="vl">${k.realizadas.toLocaleString('es-CL')}</div><div class="sb">Total del período</div></div></div>
+      <div class="k b ${H.fKpi === 'pendientes' ? 'sel' : ''}" data-kpi="pendientes"><div class="ic">📅</div><div><div class="lb">Entregas pendientes</div><div class="vl">${k.pendientes}</div><div class="sb">Por entregar</div></div></div>
+      <div class="k r ${H.fKpi === 'atrasadas' ? 'sel' : ''}" data-kpi="atrasadas"><div class="ic">⏰</div><div><div class="lb">Entregas atrasadas</div><div class="vl">${k.atrasadas}</div><div class="sb">Fuera del horario programado</div></div></div>
+      <div class="k a ${H.fKpi === 'incidencias' ? 'sel' : ''}" data-kpi="incidencias"><div class="ic">⚠️</div><div><div class="lb">Incidencias</div><div class="vl">${k.incidencias}</div><div class="sb">Con observaciones o daños</div></div></div>
     </div>
     <div class="filt">
       <div class="ft">🔽 Filtros</div>
@@ -1308,7 +1318,11 @@ function renderHist() {
   $('#hDesde').onchange = () => { H.fDesde = $('#hDesde').value; H.page = 1; renderHistBody(); };
   $('#hHasta').onchange = () => { H.fHasta = $('#hHasta').value; H.page = 1; renderHistBody(); };
   $('#hQ').oninput = () => { H.q = $('#hQ').value; H.page = 1; renderHistBody(); };
-  $('#hClr').onclick = () => { H.fEstado = 'todos'; H.fResp = 'todos'; H.fDesde = ''; H.fHasta = ''; H.q = ''; H.page = 1; renderHist(); };
+  $('#hClr').onclick = () => { H.fEstado = 'todos'; H.fResp = 'todos'; H.fDesde = ''; H.fHasta = ''; H.q = ''; H.fKpi = null; H.page = 1; renderHist(); };
+  // Tarjetas KPI como filtros del dashboard (clic para filtrar, clic de nuevo para quitar).
+  $('#histRoot').querySelectorAll('.k[data-kpi]').forEach(c => c.onclick = () => {
+    const kp = c.dataset.kpi; H.fKpi = (H.fKpi === kp) ? null : kp; H.page = 1; renderHist();
+  });
   $('#hExport').onclick = exportHistCSV;
   $('#hComp').onclick = () => { if (H.sel) comprobante(H.sel); else toast('Selecciona una entrega para su comprobante'); };
   renderHistBody();
@@ -1371,24 +1385,60 @@ function renderDetail() {
   const [cls, ic, lbl] = ESTADOS[r.estado] || ['pend', '•', r.estado];
   const sede = (ME.sedes && (ME.sedes.find(s => s.id === SEDE) || {}).nombre) || 'Sede activa';
   const accionBtn = r.estado === 'pendiente' || r.estado === 'atrasada'
-    ? `<button class="btn tl" id="dReg">✔️ Registrar entrega</button>` : `<button class="btn tl" id="dVer">🔎 Ver detalle completo</button>`;
+    ? `<button class="btn tl" id="dReg">✔️ Registrar entrega</button>` : '';
+  // Duración (entrega → devolución)
+  let durTxt = '—';
+  if (r.realizada && r.fecha_retorno) { const min = Math.max(0, Math.round((new Date(r.fecha_retorno) - new Date(r.realizada)) / 60000)); durTxt = Math.floor(min / 60) + ' h ' + (min % 60) + ' min'; }
+  const kv = (l, v, full) => `<div class="kv ${full ? '' : ''}"><span class="l">${l}</span><b>${v}</b></div>`;
+  const condTxt = c => c ? cap(String(c)) : '—';
   el.innerHTML = `<div class="dp">
     <div class="dh"><b>Detalle de entrega</b><button class="x" id="dClose">×</button></div>
     <div class="idrow"><span class="cod">${escD(r.cod)}</span><span class="pill ${cls}">${ic} ${lbl}</span></div>
-    ${r.reserva_cod ? `<div class="kv">Reserva: <span class="rz">${escD(r.reserva_cod)}</span></div>` : ''}
-    <div class="kv">Alumno: <b>${escD(r.estudiante || '—')}</b></div>
-    <div class="kv">Asignatura: <b>${escD(r.asignatura || r.categoria || '—')}</b></div>
-    <div class="kv">Sede: <b>${escD(sede)}</b></div>
-    <div class="sec">
-      <div class="kv">📅 Fecha programada: <b>${fFechaHora(r.programada)}</b></div>
-      <div class="kv">📅 Fecha realizada: <b>${fFechaHora(r.realizada)}</b></div>
-      <div class="kv">👤 Responsable: <b>${escD(r.panolero || '—')}</b></div>
+
+    <div class="sec"><div class="sech">👤 Alumno y contexto</div>
+      <div class="kgrid">
+        ${kv('Alumno', escD(r.estudiante || '—'))}
+        ${kv('RUT', escD(r.rut || '—'))}
+        ${kv('Correo', escD(r.email || '—'))}
+        ${kv('Reserva', r.reserva_cod ? `<span class="rz">${escD(r.reserva_cod)}</span>` : '—')}
+        ${kv('Asignatura', escD(r.asignatura || '—'))}
+        ${kv('Sede', escD(sede))}
+        ${kv('Responsable', escD(r.panolero || '—'))}
+        ${kv('Uso académico', 'Sí')}
+      </div>
     </div>
-    <div class="sec">
-      <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:13px">🔧 Equipos (1)</b></div>
-      <div class="eqi"><span class="ei">${icon(r.categoria || r.equipo)}</span><div><b>${escD(r.equipo || r.categoria || '—')}</b><small>${r.n_serie ? 'SN: ' + escD(r.n_serie) : (r.modelo ? escD(r.modelo) : 'Por individualizar')}</small></div><span style="margin-left:auto;color:#64748b;font-size:12px">x1</span></div>
+
+    <div class="sec"><div class="sech">🕒 Fechas y horarios</div>
+      <div class="kgrid">
+        ${kv('Programada (retiro)', fFechaHora(r.programada))}
+        ${kv('Devolución programada', fFechaHora(r.prog_retorno))}
+        ${kv('Entrega real', fFechaHora(r.realizada))}
+        ${kv('Devolución real', fFechaHora(r.fecha_retorno))}
+        ${kv('Duración del préstamo', durTxt)}
+      </div>
     </div>
-    <div class="sec"><b style="font-size:13px">Observaciones</b><div class="obs" style="margin-top:6px">${escD(r.observacion || 'Sin observaciones.')}</div></div>
+
+    <div class="sec"><div class="sech">📦 Equipos entregados (1)</div>
+      <div class="eqi"><span class="ei">${icon(r.categoria || r.equipo)}</span>
+        <div><b>${escD(r.equipo || r.categoria || '—')}</b><small>${escD(r.categoria || '—')}</small></div>
+        <span style="margin-left:auto;color:#64748b;font-size:12px">x1</span></div>
+      <div class="kgrid" style="margin-top:4px">
+        ${kv('Modelo', escD(r.modelo || '—'))}
+        ${kv('N° de serie', escD(r.n_serie || '—'))}
+        ${kv('Código QR', escD(r.codigo_qr || '—'))}
+        ${kv('Categoría', escD(r.categoria || '—'))}
+        ${kv('Condición al entregar', condTxt(r.condicion_salida))}
+        ${kv('Condición al devolver', condTxt(r.condicion_retorno))}
+      </div>
+    </div>
+
+    <div class="sec"><div class="sech">${r.incidencia ? '⚠️' : '✅'} Incidencias</div>
+      <div class="obs" style="${r.incidencia ? 'background:#fdecec;border-color:#f6cccc;color:#b91c1c' : 'background:#eefaf2;border-color:#c7ecd4;color:#15803d'}">${r.incidencia ? 'Entrega con observaciones o daños registrados.' : 'Sin incidencias registradas.'}</div>
+    </div>
+
+    <div class="sec"><div class="sech">💬 Observaciones</div><div class="obs" style="margin-top:2px">${escD(r.observacion || 'Sin observaciones.')}</div></div>
+
+    <button class="btn tl" id="dVer">🔎 Ver detalle completo</button>
     ${accionBtn}
     <button class="btn gh" id="dComp">🖨️ Descargar comprobante</button>
   </div>`;
