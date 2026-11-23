@@ -879,6 +879,61 @@ app.get('/api/por-recibir', auth, requireRole(...OPERACION), wrap(async (req, re
   res.json(rows);
 }));
 
+// Dashboard de Devoluciones (gestión de calidad): filas + KPIs.
+app.get('/api/devoluciones/dashboard', auth, requireRole(...OPERACION), wrap(async (req, res) => {
+  const sede = req.sede;
+  const q = (withAsig) => `
+    SELECT p.id, p.reserva_id, p.fecha_salida, p.fecha_retorno, p.estado,
+           p.condicion_salida, p.condicion_retorno, p.requiere_reposicion, p.observacion,
+           r.fecha_inicio AS retiro, r.fecha_fin AS prog_devolucion,
+           u.nombre AS estudiante, u.rut, u.email,
+           e.nombre AS equipo, e.marca, e.modelo, e.n_serie, e.codigo_qr, c.nombre AS categoria,
+           pa.nombre AS panolero${withAsig ? ', ta.nombre AS asignatura' : ''}
+    FROM prestamo p
+    JOIN usuario u ON u.rut=p.usuario_rut
+    JOIN equipo e ON e.id=p.equipo_id
+    JOIN categoria c ON c.id=e.categoria_id
+    LEFT JOIN usuario pa ON pa.rut=p.panolero_rut
+    LEFT JOIN reserva r ON r.id=p.reserva_id
+    ${withAsig ? 'LEFT JOIN tarea t ON t.id=r.tarea_id LEFT JOIN asignatura ta ON ta.id=t.asignatura_id' : ''}
+    WHERE e.entidad_id=$1 ORDER BY COALESCE(r.fecha_fin, p.fecha_salida) DESC LIMIT 400`;
+  let pr;
+  try { pr = (await db.query(q(true), [sede])).rows; }
+  catch (e) { if (['42703', '42P01'].includes(e.code)) pr = (await db.query(q(false), [sede])).rows; else throw e; }
+
+  const nowMs = Date.now();
+  const danado = c => c && ['dañado', 'danado', 'malo', 'perdido', 'con_danio', 'inoperativo', 'regular'].includes(String(c).toLowerCase());
+  const rows = pr.map(p => {
+    const prog = p.prog_devolucion || p.fecha_retorno || p.fecha_salida;
+    const incidencia = p.requiere_reposicion || danado(p.condicion_retorno);
+    let estado;
+    if (p.estado === 'devuelto') estado = incidencia ? 'incidencia' : 'completada';
+    else if (p.estado === 'atrasado' || (prog && new Date(prog).getTime() < nowMs)) estado = 'atrasada';
+    else estado = 'pendiente';
+    const condicion = p.estado === 'devuelto'
+      ? (incidencia ? 'Con observación' : 'En buen estado')
+      : estado === 'atrasada' ? 'Por revisar' : 'Sin revisión';
+    return {
+      id: p.id, cod: 'E-' + String(p.id).padStart(6, '0'),
+      reserva_id: p.reserva_id, reserva_cod: p.reserva_id ? 'R-' + String(p.reserva_id).padStart(5, '0') : null,
+      estudiante: p.estudiante, rut: p.rut, email: p.email, asignatura: p.asignatura || null,
+      equipo: p.equipo, marca: p.marca, modelo: p.modelo, n_serie: p.n_serie, codigo_qr: p.codigo_qr, categoria: p.categoria,
+      retiro: p.retiro, prog_devolucion: prog, fecha_salida: p.fecha_salida, fecha_retorno: p.fecha_retorno,
+      panolero: p.panolero, condicion_salida: p.condicion_salida, condicion_retorno: p.condicion_retorno,
+      condicion, incidencia, observacion: p.observacion, estado, devuelto: p.estado === 'devuelto'
+    };
+  });
+
+  const esHoy = t => { if (!t) return false; const d = new Date(t); const n = new Date(); return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate(); };
+  const kpis = {
+    hoy: rows.filter(x => !x.devuelto && esHoy(x.prog_devolucion)).length,
+    pendientes: rows.filter(x => !x.devuelto).length,
+    atrasadas: rows.filter(x => x.estado === 'atrasada').length,
+    incidencias: rows.filter(x => x.incidencia).length
+  };
+  res.json({ rows, kpis });
+}));
+
 // Recibir (check-in) — RF-59: daño → bloqueo por reposición + sanción
 app.post('/api/recibir', auth, requireRole(...OPERACION), wrap(async (req, res) => {
   const { prestamo_id, condicion_retorno, observacion } = req.body || {};

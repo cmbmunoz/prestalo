@@ -156,7 +156,7 @@ const MENUS = {
              [null,null,'Entregas'],
              ['entregas_plan','🚚','Planificación y ejecución'],['entregas_hist','🧾','Historial de entregas'],
              [null,null,'Operación'],
-             ['recibir','📥','Recibir'],['pedidos','🧾','Pedidos'],['equipos','🧰','Equipos'],['importar','📦','Importar inventario'],['disponibilidad','🗓️','Disponibilidad'],['bloqueos','🚫','Bloqueos'],
+             ['recibir','↩️','Devoluciones'],['pedidos','🧾','Pedidos'],['equipos','🧰','Equipos'],['importar','📦','Importar inventario'],['disponibilidad','🗓️','Disponibilidad'],['bloqueos','🚫','Bloqueos'],
              [null,null,'Sistema'],
              ['anuncios','📢','Anuncios'],['manuales','❓','Ayuda'],['perfil','👤','Mi perfil']],
   // Jefe de Pañol: operación + catálogo/mantención de SU sede (sin administración general)
@@ -164,7 +164,7 @@ const MENUS = {
              [null,null,'Entregas'],
              ['entregas_plan','🚚','Planificación y ejecución'],['entregas_hist','🧾','Historial de entregas'],
              [null,null,'Operación'],
-             ['recibir','📥','Recibir'],['pedidos','🧾','Pedidos'],['disponibilidad','🗓️','Disponibilidad'],['bloqueos','🚫','Bloqueos'],
+             ['recibir','↩️','Devoluciones'],['pedidos','🧾','Pedidos'],['disponibilidad','🗓️','Disponibilidad'],['bloqueos','🚫','Bloqueos'],
              [null,null,'Pañol de mi sede'],
              ['equipos','🧰','Equipos'],['mantenciones','🔧','Mantenciones'],['importar','📦','Importar inventario'],
              [null,null,'Sistema'],
@@ -300,7 +300,8 @@ async function render(key) {
     if (key === 'agenda')     return viewEntregasPlan();
     if (key === 'entregas_plan') return viewEntregasPlan();
     if (key === 'entregas_hist') return viewHistorialEntregas();
-    if (key === 'recibir')    return viewRecibir();
+    if (key === 'recibir')    return viewDevoluciones();
+    if (key === 'devoluciones_prog') return viewDevolucionesProg();
     if (key === 'kpis')       return viewKpis();
     if (key === 'inventario') return viewInventarioDash();
     if (key === 'equipos')    return viewInventario();
@@ -1606,7 +1607,592 @@ function modalEntregar(a) {
   };
 }
 
-// ----- Pañolero: Recibir (naranja) -----
+// ===================== Devoluciones (dashboard de gestión) =====================
+const DEV_CSS = `
+.dev .k.p{background:#f3eefe}.dev .k.p .ic{background:#e7ddfb;color:#7c3aed}.dev .k.p .vl{color:#7c3aed}
+.dev .tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.dev .tabs button{border:1px solid #e6e9ef;background:#fff;border-radius:10px;padding:9px 16px;font-size:13px;font-weight:700;color:#334155;cursor:pointer;display:flex;align-items:center;gap:7px}
+.dev .tabs button.on{background:#0d9488;border-color:#0d9488;color:#fff}
+.dev .devgrid{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:14px;align-items:start}
+@media(max-width:1250px){.dev .devgrid{grid-template-columns:1fr}}
+.dev .cdot{display:inline-flex;align-items:center;gap:6px;font-size:12.5px}
+.dev .cdot .d{width:8px;height:8px;border-radius:50%}
+.dev .ab2{border:1px solid #cdeee8;background:#eafaf6;color:#0d9488;border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.dev .ab2.gh{background:#fff;border-color:#e6e9ef;color:#475569}
+/* Panel Devolución rápida */
+.dev .qr{background:#fff;border:1px solid #eceff4;border-radius:14px;padding:16px;position:sticky;top:12px}
+.dev .qr .qh{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px}
+.dev .qr .qh b{font-size:16px;display:flex;align-items:center;gap:7px}
+.dev .qr .qh p{margin:2px 0 0;color:#64748b;font-size:12px}
+.dev .qr .seg2{display:flex;gap:6px;background:#f1f5f9;border-radius:10px;padding:4px;margin:12px 0}
+.dev .qr .seg2 button{flex:1;border:0;background:transparent;border-radius:8px;padding:8px;font-size:12.5px;font-weight:700;color:#475569;cursor:pointer}
+.dev .qr .seg2 button.on{background:#0f172a;color:#fff}
+.dev .qr .scan{border:2px dashed #cbd5e1;border-radius:12px;padding:20px;text-align:center;color:#64748b;font-size:12.5px;margin-bottom:12px}
+.dev .qr .scan .fr{font-size:26px;color:#0d9488}
+.dev .qr .rcard{border:1px solid #e6e9ef;border-radius:11px;padding:11px;display:flex;gap:10px;align-items:flex-start;margin-bottom:12px}
+.dev .qr .rcard .ri{width:34px;height:34px;border-radius:9px;background:#eef2f7;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.dev .qr .rcard b{font-size:13px}.dev .qr .rcard small{display:block;color:#64748b;font-size:11.5px}
+.dev .qr .sect{font-size:12.5px;font-weight:800;margin:12px 0 7px;display:flex;justify-content:space-between;align-items:center}
+.dev .qr .chk{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:12.5px;border-bottom:1px solid #f3f5f8}
+.dev .qr .chk .cb{width:20px;height:20px;border-radius:6px;background:#16a34a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;flex:0 0 auto}
+.dev .qr .cnt{font-size:11px;font-weight:700;color:#0d9488;background:#eafaf6;border-radius:999px;padding:2px 9px}
+.dev .qr .frow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.dev .qr label{font-size:11px;color:#64748b;display:block;margin-bottom:3px}
+.dev .qr select,.dev .qr textarea{width:100%;box-sizing:border-box;border:1px solid #d7dce3;border-radius:9px;padding:8px 10px;font-size:12.5px;font-family:inherit}
+.dev .qr textarea{min-height:58px;resize:vertical}
+.dev .qr .tog{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700}
+.dev .qr .tg{width:40px;height:22px;border-radius:999px;background:#cbd5e1;position:relative;cursor:pointer;transition:background .15s;flex:0 0 auto}
+.dev .qr .tg.on{background:#dc2626}
+.dev .qr .tg::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .15s}
+.dev .qr .tg.on::after{left:20px}
+.dev .qr .photo{border:1px dashed #cbd5e1;border-radius:10px;padding:12px;text-align:center;color:#64748b;font-size:11px}
+.dev .qr .multas{display:flex;justify-content:space-between;align-items:center;border-top:1px solid #eef1f5;border-bottom:1px solid #eef1f5;padding:11px 0;margin:12px 0;font-size:13px;font-weight:700}
+.dev .qr .conf{display:flex;gap:14px;font-size:12.5px;margin:6px 0 2px}
+.dev .qr .conf .o{display:inline-flex;align-items:center;gap:6px;color:#334155}
+.dev .qr .qbtns{display:flex;gap:8px;margin-top:12px}
+.dev .qr .qbtns button{flex:1;border-radius:10px;padding:10px;font-size:12.5px;font-weight:700;cursor:pointer;border:1px solid #d7dce3;background:#fff;color:#334155;display:flex;align-items:center;justify-content:center;gap:6px}
+.dev .qr .qbtns button.tl{background:#0d9488;border-color:#0d9488;color:#fff}
+.dev .qr .qbtns button.wr{background:#fff7ed;border-color:#fed7aa;color:#c2410c}
+.dev .qr .empty{color:#94a3b8;font-size:12.5px;text-align:center;padding:20px 8px}
+.dev . hd2{}
+`;
+let DEV = null;
+const DEV_EST = { pendiente: ['pend', '🗂️', 'Pendiente'], atrasada: ['atr', '⏰', 'Atrasada'], incidencia: ['inc', '⚠️', 'Incidencia'], completada: ['ok', '✔️', 'Completada'] };
+function devCondDot(c) {
+  const t = String(c || '').toLowerCase();
+  const color = t.includes('buen') || t.includes('óptim') || t.includes('optim') ? '#16a34a'
+    : t.includes('observ') || t.includes('revis') && !t.includes('sin') ? '#d97706'
+    : t.includes('daño') || t.includes('dano') || t.includes('observ') ? '#dc2626'
+    : '#94a3b8';
+  return `<span class="cdot"><span class="d" style="background:${color}"></span>${escD(c || 'Sin revisión')}</span>`;
+}
+function devEnRango(r, rango) {
+  const t = r.prog_devolucion; if (!t) return rango === 'todas';
+  const d = new Date(t), n = new Date();
+  if (rango === 'todas') return true;
+  if (rango === 'hoy') return d.toDateString() === n.toDateString();
+  if (rango === 'semana') { const a = new Date(n); a.setHours(0, 0, 0, 0); const b = new Date(a); b.setDate(a.getDate() + 7); return d >= a && d < b; }
+  if (rango === 'mes') return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth();
+  return true;
+}
+
+async function viewDevoluciones() {
+  h(`<div class="hist dev"><style>${HIST_CSS}${DEV_CSS}</style><div id="devRoot">Cargando…</div></div>`);
+  let d;
+  try { d = await api('/devoluciones/dashboard'); } catch (e) { $('#devRoot').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
+  const rows = Array.isArray(d) ? d : (d.rows || []);
+  const kpis = (d && d.kpis) || { hoy: 0, pendientes: rows.length, atrasadas: 0, incidencias: 0 };
+  DEV = { rows, kpis, rango: 'hoy', fKpi: null, fEstado: 'todos', fCarr: 'todas', fResp: 'todos', fDesde: '', fHasta: '', q: '', sel: null, page: 1, perPage: 8, estadoFisico: 'bueno', danos: false, obs: '', metodo: 'qr' };
+  renderDev();
+}
+
+function devFiltradas() {
+  const D = DEV; const q = (D.q || '').toLowerCase();
+  return D.rows.filter(r => {
+    if (!devEnRango(r, D.rango)) return false;
+    if (D.fKpi === 'hoy' && !(!r.devuelto && devEnRango(r, 'hoy'))) return false;
+    if (D.fKpi === 'pendientes' && r.devuelto) return false;
+    if (D.fKpi === 'atrasadas' && r.estado !== 'atrasada') return false;
+    if (D.fKpi === 'incidencias' && !r.incidencia) return false;
+    if (D.fEstado !== 'todos' && r.estado !== D.fEstado) return false;
+    if (D.fCarr !== 'todas' && (r.asignatura || '') !== D.fCarr) return false;
+    if (D.fResp !== 'todos' && (r.panolero || '') !== D.fResp) return false;
+    if (D.fDesde && (!r.prog_devolucion || new Date(r.prog_devolucion) < new Date(D.fDesde))) return false;
+    if (D.fHasta && (!r.prog_devolucion || new Date(r.prog_devolucion) > new Date(D.fHasta + 'T23:59:59'))) return false;
+    if (q && !((r.reserva_cod + ' ' + (r.estudiante || '') + ' ' + (r.equipo || '') + ' ' + (r.asignatura || '')).toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+
+function renderDev() {
+  const D = DEV; const k = D.kpis;
+  const carr = [...new Set(D.rows.map(r => r.asignatura).filter(Boolean))];
+  const resp = [...new Set(D.rows.map(r => r.panolero).filter(Boolean))];
+  const sede = (ME.sedes && (ME.sedes.find(s => s.id === SEDE) || {}).nombre) || 'Sede activa';
+  $('#devRoot').innerHTML = `
+    <div class="hhd"><div><h1>Devoluciones</h1><p>Control de devoluciones, estado de equipos y cierre de préstamos.</p></div>
+      <button class="b tl" id="dvProg" style="height:40px;border:1px solid #0d9488;background:#0d9488;color:#fff;border-radius:10px;padding:0 14px;font-size:13px;font-weight:700;cursor:pointer">📅 Devoluciones programadas</button></div>
+    <div class="kpis">
+      <div class="k b ${D.fKpi === 'hoy' ? 'sel' : ''}" data-kpi="hoy"><div class="ic">📦</div><div><div class="lb">Devoluciones de hoy</div><div class="vl">${k.hoy}</div><div class="sb">Programadas</div></div></div>
+      <div class="k g ${D.fKpi === 'pendientes' ? 'sel' : ''}" data-kpi="pendientes"><div class="ic">✅</div><div><div class="lb">Pendientes</div><div class="vl">${k.pendientes}</div><div class="sb">Por procesar</div></div></div>
+      <div class="k r ${D.fKpi === 'atrasadas' ? 'sel' : ''}" data-kpi="atrasadas"><div class="ic">⏰</div><div><div class="lb">Atrasadas</div><div class="vl">${k.atrasadas}</div><div class="sb">Fuera de plazo</div></div></div>
+      <div class="k p ${D.fKpi === 'incidencias' ? 'sel' : ''}" data-kpi="incidencias"><div class="ic">⚠️</div><div><div class="lb">Con incidencias</div><div class="vl">${k.incidencias}</div><div class="sb">Con daños o faltantes</div></div></div>
+    </div>
+    <div class="tabs">
+      <button data-r="hoy" class="${D.rango === 'hoy' ? 'on' : ''}">📅 Hoy</button>
+      <button data-r="semana" class="${D.rango === 'semana' ? 'on' : ''}">📅 Esta semana</button>
+      <button data-r="mes" class="${D.rango === 'mes' ? 'on' : ''}">📅 Este mes</button>
+      <button data-r="todas" class="${D.rango === 'todas' ? 'on' : ''}">≣ Todas</button>
+    </div>
+    <div class="filt">
+      <div class="ft">🔽 Filtros</div>
+      <div class="fg"><label>Estado</label><select id="dEstado">
+        <option value="todos">Todos</option><option value="pendiente">Pendiente</option><option value="atrasada">Atrasada</option><option value="incidencia">Incidencia</option><option value="completada">Completada</option></select></div>
+      <div class="fg"><label>Sede</label><select><option>${escD(sede)}</option></select></div>
+      <div class="fg"><label>Carrera / Asignatura</label><select id="dCarr"><option value="todas">Todas</option>${carr.map(x => `<option${x === D.fCarr ? ' selected' : ''}>${escD(x)}</option>`).join('')}</select></div>
+      <div class="fg"><label>Responsable</label><select id="dResp"><option value="todos">Todos</option>${resp.map(x => `<option${x === D.fResp ? ' selected' : ''}>${escD(x)}</option>`).join('')}</select></div>
+      <div class="fg"><label>Desde</label><input type="date" id="dDesde" value="${D.fDesde}"></div>
+      <div class="fg"><label>Hasta</label><input type="date" id="dHasta" value="${D.fHasta}"></div>
+      <a class="clr" id="dClr">↻ Limpiar filtros</a>
+    </div>
+    <div class="tbar"><div class="srch"><input id="dQ" placeholder="Buscar reserva, alumno, equipo o kit…" value="${escD(D.q)}"></div>
+      <button class="b" id="dExport">⬇️ Exportar</button><button class="b" id="dActual">↻ Actualizar</button></div>
+    <div class="devgrid">
+      <div class="card"><div class="tbh" style="padding:14px 16px 0"><h3 style="margin:0;font-size:15px">↩️ Devoluciones programadas — ${({ hoy: 'Hoy', semana: 'Esta semana', mes: 'Este mes', todas: 'Todas' })[D.rango]} <span id="dCount" style="color:#64748b;font-weight:600"></span></h3></div>
+        <div class="tw"><table>
+          <thead><tr><th>Reserva ↕</th><th>Alumno ↕</th><th>Equipo / Kit ↕</th><th>Fecha y hora programada ↕</th><th>Estado</th><th>Condición</th><th>Acciones</th></tr></thead>
+          <tbody id="dBody"></tbody></table></div>
+        <div class="pag" id="dPag"></div>
+      </div>
+      <div id="dQuick"></div>
+    </div>`;
+  $('#dEstado').value = D.fEstado;
+  $('#dvProg').onclick = viewDevolucionesProg;
+  $('#devRoot').querySelectorAll('.k[data-kpi]').forEach(c => c.onclick = () => { const kp = c.dataset.kpi; D.fKpi = (D.fKpi === kp) ? null : kp; D.page = 1; renderDev(); });
+  $('#devRoot').querySelectorAll('.tabs button').forEach(b => b.onclick = () => { D.rango = b.dataset.r; D.page = 1; renderDev(); });
+  $('#dEstado').onchange = () => { D.fEstado = $('#dEstado').value; D.page = 1; renderDevBody(); };
+  $('#dCarr').onchange = () => { D.fCarr = $('#dCarr').value; D.page = 1; renderDevBody(); };
+  $('#dResp').onchange = () => { D.fResp = $('#dResp').value; D.page = 1; renderDevBody(); };
+  $('#dDesde').onchange = () => { D.fDesde = $('#dDesde').value; D.page = 1; renderDevBody(); };
+  $('#dHasta').onchange = () => { D.fHasta = $('#dHasta').value; D.page = 1; renderDevBody(); };
+  $('#dQ').oninput = () => { D.q = $('#dQ').value; D.page = 1; renderDevBody(); };
+  $('#dClr').onclick = () => { Object.assign(D, { fKpi: null, fEstado: 'todos', fCarr: 'todas', fResp: 'todos', fDesde: '', fHasta: '', q: '', page: 1 }); renderDev(); };
+  $('#dActual').onclick = viewDevoluciones;
+  $('#dExport').onclick = () => toast('Exportación del listado de devoluciones');
+  renderDevBody();
+  renderQuickReturn();
+}
+
+function renderDevBody() {
+  const D = DEV; const lista = devFiltradas();
+  if ($('#dCount')) $('#dCount').textContent = '(' + lista.length + ')';
+  const total = lista.length, pp = D.perPage, pages = Math.max(1, Math.ceil(total / pp));
+  if (D.page > pages) D.page = pages;
+  const a = (D.page - 1) * pp, b = Math.min(total, a + pp);
+  $('#dBody').innerHTML = total ? lista.slice(a, b).map(r => {
+    const [cls, ic, lbl] = DEV_EST[r.estado] || ['pend', '•', r.estado];
+    const acc = r.devuelto
+      ? `<button class="ab2 gh" data-act="ver">👁️ Ver detalle</button>`
+      : r.incidencia ? `<button class="ab2" data-act="dev">⚙️ Gestionar</button>`
+      : `<button class="ab2" data-act="dev">↩️ Devolver</button>`;
+    return `<tr data-cod="${escD(r.cod)}" class="${D.sel && D.sel.cod === r.cod ? 'sel' : ''}">
+      <td><span class="rz">${escD(r.reserva_cod || '—')}</span></td>
+      <td class="al"><b>${escD(r.estudiante || '—')}</b><small>${escD(r.asignatura || r.categoria || '—')}</small></td>
+      <td><div class="eq"><span class="ei">${icon(r.categoria || r.equipo)}</span><b style="font-weight:600">${escD(r.equipo || '—')}</b></div></td>
+      <td class="fdt">${fFechaDos(r.prog_devolucion)}</td>
+      <td><span class="pill ${cls}">${ic} ${lbl}</span></td>
+      <td>${devCondDot(r.condicion)}</td>
+      <td style="display:flex;gap:6px;align-items:center">${acc}<button class="dots" data-act="mas">⋯</button></td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="7" class="muted" style="padding:22px;text-align:center;color:#94a3b8">No hay devoluciones que coincidan con los filtros.</td></tr>`;
+
+  const nums = []; for (let p = 1; p <= pages; p++) { if (p === 1 || p === pages || Math.abs(p - D.page) <= 1) nums.push(p); else if (nums[nums.length - 1] !== '…') nums.push('…'); }
+  $('#dPag').innerHTML = `<div class="mut">Mostrando ${total ? a + 1 : 0}–${b} de ${total} devoluciones</div>
+    <div class="pg"><button ${D.page <= 1 ? 'disabled' : ''} data-pg="prev">← Anterior</button>
+    ${nums.map(n => n === '…' ? '<span class="mut" style="padding:0 4px">…</span>' : `<button data-pg="${n}" class="${n === D.page ? 'on' : ''}">${n}</button>`).join('')}
+    <button ${D.page >= pages ? 'disabled' : ''} data-pg="next">Siguiente →</button></div>`;
+
+  $('#dBody').querySelectorAll('tr[data-cod]').forEach(tr => {
+    const r = lista.find(x => x.cod === tr.dataset.cod);
+    tr.onclick = (ev) => {
+      const act = ev.target.closest('button')?.dataset.act;
+      if (act === 'mas') return;
+      DEV.sel = r; DEV.estadoFisico = 'bueno'; DEV.danos = false; DEV.obs = '';
+      renderDevBody(); renderQuickReturn();
+    };
+  });
+  $('#dPag').querySelectorAll('button[data-pg]').forEach(b2 => b2.onclick = () => { const v = b2.dataset.pg; if (v === 'prev') D.page--; else if (v === 'next') D.page++; else D.page = Number(v); renderDevBody(); });
+}
+
+function renderQuickReturn() {
+  const el = $('#dQuick'); if (!el) return;
+  const r = DEV.sel;
+  if (!r) {
+    el.innerHTML = `<div class="qr">
+      <div class="qh"><div><b>↩️ Devolución rápida</b><p>Registra la devolución, verifica el estado y cierra el préstamo.</p></div></div>
+      <div class="seg2"><button class="on">🔳 Escanear QR</button><button>⌨️ Código de reserva</button></div>
+      <div class="scan"><div class="fr">⌞⌝</div>Escanea el código QR de la reserva o del equipo</div>
+      <div class="empty">Selecciona una devolución de la lista para procesarla.</div></div>`;
+    return;
+  }
+  const [cls, ic, lbl] = DEV_EST[r.estado] || ['pend', '•', r.estado];
+  const readonly = r.devuelto;
+  el.innerHTML = `<div class="qr">
+    <div class="qh"><div><b>↩️ Devolución rápida</b><p>Registra la devolución, verifica el estado y cierra el préstamo.</p></div><button class="x" id="qClose" style="border:0;background:transparent;font-size:18px;color:#94a3b8;cursor:pointer">×</button></div>
+    <div class="seg2"><button class="${DEV.metodo === 'qr' ? 'on' : ''}" id="qmQr">🔳 Escanear QR</button><button class="${DEV.metodo === 'cod' ? 'on' : ''}" id="qmCod">⌨️ Código de reserva</button></div>
+    <div class="scan"><div class="fr">⌞⌝</div>Escanea el código QR de la reserva<br>o del equipo</div>
+    <div class="rcard"><div class="ri">${icon(r.categoria || r.equipo)}</div>
+      <div style="flex:1"><b>Reserva: ${escD(r.reserva_cod || '—')}</b><small>Alumno: ${escD(r.estudiante || '—')}</small><small>Asignatura: ${escD(r.asignatura || '—')}</small></div>
+      <span class="pill ${cls}">${ic} ${lbl}</span></div>
+    <div class="sect">Equipos / Accesorios <span class="cnt">1 de 1</span></div>
+    <div class="chk"><span class="cb">✓</span>${escD(r.equipo || r.categoria || '—')}${r.n_serie ? ` · <span style="color:#64748b">${escD(r.n_serie)}</span>` : ''}</div>
+    <div class="frow">
+      <div><label>Estado físico del equipo</label>
+        <select id="qEstado" ${readonly ? 'disabled' : ''}>
+          <option value="optimo">Óptimo</option>
+          <option value="bueno" selected>En buen estado</option>
+          <option value="observacion">Con observación</option>
+          <option value="con_danio">Con daño</option>
+          <option value="inoperativo">Inoperativo / faltante</option></select></div>
+      <div><label>¿Daños o faltantes?</label>
+        <div class="tog"><span class="tg ${DEV.danos ? 'on' : ''}" id="qTog"></span><span id="qTogL">${DEV.danos ? 'Sí' : 'No'}</span></div></div>
+    </div>
+    <div style="margin-top:10px"><label>Observaciones</label><textarea id="qObs" placeholder="Ingresa observaciones (opcional)…" ${readonly ? 'disabled' : ''}>${escD(r.observacion || '')}</textarea></div>
+    <div style="margin-top:10px"><label>Fotografías (opcional)</label><div class="photo">📷 Agregar fotos<br><span style="color:#94a3b8">JPG, PNG (máx. 5 MB)</span></div></div>
+    <div class="multas"><span>🧮 Multas o daños</span><span>${r.incidencia ? '<span style="color:#dc2626">Con cargos</span>' : 'Sin cargos'} <b style="margin-left:8px">$0</b></span></div>
+    <div class="sect" style="margin:0 0 4px">🖊️ Confirmación</div>
+    <div class="conf"><span class="o">✅ Firma digital en pantalla</span><span class="o">○ Confirmación con RUT</span></div>
+    <div class="qbtns"><button class="gh" id="qBorr">Guardar borrador</button><button class="wr" id="qEsc">⚠️ Escalar incidencia</button><button class="tl" id="qReg">✔️ ${readonly ? 'Ver detalle' : 'Registrar devolución'}</button></div>
+  </div>`;
+  $('#qClose').onclick = () => { DEV.sel = null; renderDevBody(); renderQuickReturn(); };
+  if ($('#qmQr')) $('#qmQr').onclick = () => { DEV.metodo = 'qr'; renderQuickReturn(); };
+  if ($('#qmCod')) $('#qmCod').onclick = () => { DEV.metodo = 'cod'; renderQuickReturn(); };
+  if ($('#qTog')) $('#qTog').onclick = () => { DEV.danos = !DEV.danos; renderQuickReturn(); };
+  if ($('#qEstado')) { $('#qEstado').value = DEV.estadoFisico; $('#qEstado').onchange = () => { DEV.estadoFisico = $('#qEstado').value; }; }
+  if ($('#qObs')) $('#qObs').oninput = () => { DEV.obs = $('#qObs').value; };
+  $('#qBorr').onclick = () => toast('Borrador guardado');
+  $('#qEsc').onclick = () => toast('Incidencia escalada a jefe de pañol');
+  $('#qReg').onclick = async () => {
+    if (readonly) return toast('Esta devolución ya fue registrada');
+    let cond = DEV.estadoFisico;
+    if (cond === 'observacion') cond = 'bueno';
+    if (DEV.danos && cond !== 'inoperativo') cond = 'con_danio';
+    try {
+      const resp = await api('/recibir', { method: 'POST', body: { prestamo_id: Number(r.id), condicion_retorno: cond, observacion: (DEV.obs || '').trim() || null } });
+      toast(resp.requiere_reposicion ? 'Devolución con daño: bloqueo por reposición aplicado' : 'Devolución registrada');
+      viewDevoluciones();
+    } catch (e) { toast(e.message); }
+  };
+}
+
+// ===================== Devoluciones Programadas (planificación) =====================
+const DEVPROG_CSS = `
+.dprog{color:#0f172a}
+.dprog .ph{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.dprog .ph h1{margin:0;font-size:22px;font-weight:800}
+.dprog .ph p{margin:3px 0 0;color:#64748b;font-size:13px}
+.dprog .ph .bk{height:38px;border:1px solid #d7dce3;background:#fff;border-radius:9px;padding:0 13px;font-size:12.5px;font-weight:700;cursor:pointer;color:#334155}
+.dprog .calbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border:1px solid #eceff4;border-radius:12px;padding:10px 12px;margin-bottom:12px}
+.dprog .calbar .nav{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13.5px}
+.dprog .calbar .nav button{width:30px;height:30px;border:1px solid #e6e9ef;background:#fff;border-radius:8px;cursor:pointer}
+.dprog .calbar .seg{display:flex;background:#eef2f7;border-radius:9px;padding:3px}
+.dprog .calbar .seg button{border:0;background:transparent;padding:6px 16px;border-radius:7px;font-size:12.5px;font-weight:700;color:#475569;cursor:pointer}
+.dprog .calbar .seg button.on{background:#0d9488;color:#fff}
+.dprog .calbar .sede{margin-left:auto;border:1px solid #d7dce3;border-radius:9px;padding:7px 10px;font-size:12.5px;background:#fff;min-width:200px}
+.dprog .tlwrap{display:grid;grid-template-columns:150px minmax(0,1fr) 180px;gap:12px;background:#fff;border:1px solid #eceff4;border-radius:14px;padding:14px;margin-bottom:12px}
+@media(max-width:1100px){.dprog .tlwrap{grid-template-columns:1fr}}
+.dprog .today{background:#f8fafc;border:1px solid #eef1f5;border-radius:12px;padding:12px}
+.dprog .today .d{font-size:30px;font-weight:800;line-height:1}
+.dprog .today .wd{color:#64748b;font-size:12px;margin-bottom:8px}
+.dprog .today .mini{display:flex;gap:7px;align-items:center;font-size:12px;margin:6px 0;color:#334155}
+.dprog .today .mini .dot{width:9px;height:9px;border-radius:50%}
+.dprog .today .big{font-size:22px;font-weight:800;margin:2px 0}
+.dprog .lanes{position:relative;overflow-x:auto}
+.dprog .axis{display:flex;justify-content:space-between;font-size:10.5px;color:#9aa3af;margin:0 0 4px 96px}
+.dprog .lane{display:flex;align-items:center;gap:8px;height:42px;border-top:1px solid #f1f5f9}
+.dprog .lane .lb{width:88px;flex:0 0 auto;font-size:11.5px;color:#475569;font-weight:700;display:flex;align-items:center;gap:5px}
+.dprog .track{position:relative;flex:1;height:100%;min-width:420px}
+.dprog .ev{position:absolute;top:7px;height:26px;display:flex;align-items:center;gap:5px;padding:0 8px;border-radius:7px;font-size:11px;font-weight:700;white-space:nowrap;cursor:pointer;border:1px solid}
+.dprog .ev .ck{font-size:10px}
+.dprog .nowl{position:absolute;top:-2px;bottom:0;width:2px;background:#2563eb;z-index:3}
+.dprog .nowl .pin{position:absolute;top:-16px;left:50%;transform:translateX(-50%);background:#2563eb;color:#fff;font-size:10px;font-weight:800;padding:1px 6px;border-radius:9px}
+.dprog .leg{background:#f8fafc;border:1px solid #eef1f5;border-radius:12px;padding:12px}
+.dprog .leg h4{margin:0 0 8px;font-size:12px}
+.dprog .leg .li{display:flex;gap:8px;align-items:flex-start;font-size:11.5px;margin:7px 0}
+.dprog .leg .li .ic{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;flex:0 0 auto}
+.dprog .leg .li b{display:block}.dprog .leg .li small{color:#64748b}
+.dprog .filt{background:#fff;border:1px solid #eceff4;border-radius:12px;padding:10px 14px;display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px}
+.dprog .filt .ft{display:flex;align-items:center;gap:7px;color:#334155;font-weight:700;font-size:13px;padding-bottom:7px}
+.dprog .filt .fg{display:flex;flex-direction:column;gap:3px;min-width:150px}
+.dprog .filt .fg label{font-size:11px;color:#64748b}
+.dprog .filt select{height:38px;border:1px solid #d7dce3;border-radius:9px;padding:8px 10px;font-size:13px;background:#fff;font-family:inherit}
+.dprog .filt .clr{margin-left:auto;color:#0d9488;font-size:13px;font-weight:700;cursor:pointer;padding-bottom:8px}
+.dprog .ptabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.dprog .ptabs button{border:1px solid #e6e9ef;background:#fff;border-radius:10px;padding:10px 16px;font-size:12.5px;font-weight:700;cursor:pointer;color:#475569;display:flex;align-items:center;gap:7px}
+.dprog .ptabs button.on{background:#0d9488;border-color:#0d9488;color:#fff}
+.dprog .ptabs button.on.r{background:#dc2626;border-color:#dc2626}
+.dprog .ptabs button.on.y{background:#d97706;border-color:#d97706}
+.dprog .pgrid{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:12px;align-items:start}
+@media(max-width:1150px){.dprog .pgrid{grid-template-columns:1fr}}
+.dprog .card{background:#fff;border:1px solid #eceff4;border-radius:14px;overflow:hidden}
+.dprog .tw{overflow-x:auto}
+.dprog table{width:100%;border-collapse:collapse;min-width:620px}
+.dprog thead th{text-align:left;font-size:11px;color:#64748b;font-weight:700;padding:11px 12px;border-bottom:1px solid #eef1f5;white-space:nowrap}
+.dprog tbody td{padding:10px 12px;border-bottom:1px solid #f3f5f8;font-size:12.5px;vertical-align:middle}
+.dprog tbody tr{cursor:pointer}.dprog tbody tr:hover{background:#f8fafc}
+.dprog tbody tr.sel{background:#e9f7f4;box-shadow:inset 3px 0 0 #0d9488}
+.dprog .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap}
+.dprog .acts{display:flex;gap:4px}
+.dprog .acts .rc{border:1px solid #0d9488;color:#0d9488;background:#fff;border-radius:8px;padding:5px 10px;font-size:11.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px}
+.dprog .acts .ib{width:30px;height:30px;border:1px solid #e6e9ef;background:#fff;border-radius:8px;cursor:pointer;color:#475569}
+/* Detalle de devolución */
+.dprog .dp{background:#fff;border:1px solid #eceff4;border-radius:14px;padding:16px}
+.dprog .dp .dh{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.dprog .dp .dh b{font-size:15px}
+.dprog .dp .top{display:flex;gap:10px;align-items:center;margin-bottom:12px}
+.dprog .dp .top .ph2{width:52px;height:52px;border-radius:10px;background:#eef2f7;display:flex;align-items:center;justify-content:center;font-size:24px;flex:0 0 auto}
+.dprog .dp .top b{font-size:14px}.dprog .dp .top small{color:#64748b;font-size:11.5px;display:block}
+.dprog .dp .sh{font-size:12px;font-weight:800;margin:12px 0 6px;display:flex;align-items:center;gap:6px}
+.dprog .dp .kv{font-size:12px;color:#334155;margin:5px 0;display:flex;gap:7px;align-items:flex-start}
+.dprog .dp .kv .i{opacity:.7}
+.dprog .dp .hl{background:#fff7e6;border-radius:6px;padding:1px 5px}
+.dprog .dp .eqrow{display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid #f3f5f8}
+.dprog .dp .vt{position:relative;margin:4px 0 4px 8px;padding-left:18px}
+.dprog .dp .vt .st{position:relative;padding:0 0 12px 0;font-size:11.5px}
+.dprog .dp .vt .st::before{content:"";position:absolute;left:-18px;top:2px;width:12px;height:12px;border-radius:50%;background:#fff;border:2px solid #cbd5e1}
+.dprog .dp .vt .st.done::before{background:#16a34a;border-color:#16a34a}
+.dprog .dp .vt .st.now::before{background:#2563eb;border-color:#2563eb}
+.dprog .dp .vt::before{content:"";position:absolute;left:-12px;top:4px;bottom:10px;width:2px;background:#e2e8f0}
+.dprog .dp .vt .st b{font-weight:700}.dprog .dp .vt .st small{color:#64748b;display:block}
+.dprog .dp .rec{background:#f1e9fe;border:1px solid #e0d2fb;border-radius:10px;padding:10px;font-size:11.5px}
+.dprog .dp .rec .r{display:flex;gap:7px;margin:5px 0;color:#5b21b6}
+.dprog .dp .dbtns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.dprog .dp .dbtns button{border:1px solid #d7dce3;background:#fff;border-radius:9px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;color:#334155}
+.dprog .dp .dbtns button.tl{grid-column:1/-1;background:#0d9488;border-color:#0d9488;color:#fff}
+.dprog .sug{background:#fff;border:1px solid #eceff4;border-radius:12px;padding:12px 14px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:12px;font-size:12px;color:#334155}
+.dprog .sug .t{font-weight:800;display:flex;align-items:center;gap:7px}
+.dprog .sug .it{display:flex;align-items:center;gap:6px}
+.dprog .empty{color:#94a3b8;font-size:13px;text-align:center;padding:30px 10px}
+`;
+let PROG = null;
+// Estado operativo de una devolución para la planificación (5 estados de la leyenda).
+const PROG_EST = {
+  confirmada:   ['#16a34a', '#e7f8ee', '✓', 'Confirmada', 'Recepción registrada'],
+  proceso:      ['#d97706', '#fdf1dd', '⏳', 'En proceso', 'En recepción'],
+  programada:   ['#2563eb', '#e8f0fe', '📅', 'Programada', 'Pendiente de recibir'],
+  reprogramada: ['#7c3aed', '#f1e9fe', '↻', 'Reprogramada', 'Con nueva fecha'],
+  atrasada:     ['#dc2626', '#fdecec', '⚠', 'Atrasada', 'Fuera de plazo']
+};
+const progEstado = r => r.devuelto ? (r.incidencia ? 'proceso' : 'confirmada')
+  : r.estado === 'atrasada' ? 'atrasada' : r.incidencia ? 'proceso' : 'programada';
+const laneCat = c => { const t = String(c || '').toLowerCase();
+  if (t.includes('cámar') || t.includes('camar') || t.includes('foto')) return 'Cámaras';
+  if (t.includes('ilum') || t.includes('luz') || t.includes('led')) return 'Iluminación';
+  if (t.includes('son') || t.includes('audio') || t.includes('micr')) return 'Sonido';
+  if (t.includes('kit')) return 'Kits';
+  return 'Otros'; };
+const LANE_IC = { 'Cámaras': '📷', 'Iluminación': '💡', 'Sonido': '🎙️', 'Kits': '🧰', 'Otros': '🗂️' };
+
+async function viewDevolucionesProg() {
+  h(`<div class="dprog"><style>${HIST_CSS}${DEVPROG_CSS}</style><div id="progRoot">Cargando…</div></div>`);
+  let d;
+  try { d = await api('/devoluciones/dashboard'); } catch (e) { $('#progRoot').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
+  const rows = (d && d.rows) || [];
+  PROG = { rows, ref: null, rango: 'dia', tab: 'proximas', sel: null, fCarr: 'todas', fTipo: 'todos', fResp: 'todos' };
+  renderProg();
+}
+
+function progDelDia(ref) {
+  const base = ref ? new Date(ref + 'T12:00:00') : new Date();
+  return PROG.rows.filter(r => { if (r.devuelto) return false; const t = r.prog_devolucion; if (!t) return false; return new Date(t).toDateString() === base.toDateString(); });
+}
+
+function renderProg() {
+  const P = PROG;
+  const base = P.ref ? new Date(P.ref + 'T12:00:00') : new Date();
+  const isoDay = x => { const y = x.getFullYear(), m = ('0' + (x.getMonth() + 1)).slice(-2), dd = ('0' + x.getDate()).slice(-2); return `${y}-${m}-${dd}`; };
+  const sede = (ME.sedes && (ME.sedes.find(s => s.id === SEDE) || {}).nombre) || 'Sede activa';
+  const delDia = progDelDia(P.ref);
+
+  // ----- Resumen del día por estado -----
+  const cnt = { confirmada: 0, proceso: 0, programada: 0, reprogramada: 0, atrasada: 0 };
+  delDia.forEach(r => cnt[progEstado(r)]++);
+  const totDia = delDia.length || 0;
+  const pct = n => totDia ? Math.round(n / totDia * 100) : 0;
+  const miniLine = (st, label) => { const [c] = PROG_EST[st]; return `<div class="mini"><span class="dot" style="background:${c}"></span>${label} <b style="margin-left:auto">${cnt[st]} <small style="color:#94a3b8">(${pct(cnt[st])}%)</small></b></div>`; };
+
+  // ----- Swimlanes por categoría -----
+  const AX0 = 8, AX1 = 19, SPAN = AX1 - AX0;
+  const pos = t => { const dt = new Date(t); const hh = dt.getHours() + dt.getMinutes() / 60; return Math.max(0, Math.min(97, (hh - AX0) / SPAN * 100)); };
+  const ejes = []; for (let x = AX0; x <= AX1; x++) ejes.push(('0' + x).slice(-2) + ':00');
+  const lanesCat = ['Cámaras', 'Iluminación', 'Sonido', 'Kits', 'Otros'];
+  const porLane = {}; lanesCat.forEach(l => porLane[l] = []);
+  delDia.forEach(r => porLane[laneCat(r.categoria)].push(r));
+  const laneHtml = lanesCat.map(l => {
+    const items = porLane[l];
+    const chips = items.map(r => { const st = progEstado(r); const [c, bg, ck] = PROG_EST[st]; const left = pos(r.prog_devolucion);
+      const nm = (r.estudiante || '—').split(' '); const corto = nm[0] + (nm[1] ? ' ' + nm[1][0] + '.' : '');
+      return `<div class="ev" data-cod="${escD(r.cod)}" style="left:${left}%;background:${bg};border-color:${c};color:${c}" title="${escD(r.estudiante)} · ${fmtHora(r.prog_devolucion)}"><span class="ck">${ck}</span>${escD(corto)}${st === 'atrasada' ? ' (atrasada)' : ''}</div>`; }).join('');
+    const now = new Date(); const esHoy = !P.ref || P.ref === isoDay(new Date());
+    return `<div class="lane"><div class="lb">${LANE_IC[l]} ${l} (${items.length})</div><div class="track">${chips}</div></div>`;
+  }).join('');
+  const now = new Date(); const nh = now.getHours() + now.getMinutes() / 60;
+  const esHoy = !P.ref || P.ref === isoDay(new Date());
+  const nowMark = (esHoy && nh >= AX0 && nh <= AX1) ? `<div class="nowl" style="left:calc(96px + ${pos(now)}% * (100% - 96px) / 100)"><span class="pin">${fmtHora(now)}</span></div>` : '';
+
+  // ----- Leyenda -----
+  const leg = Object.keys(PROG_EST).map(st => { const [c, bg, ic, lbl, sub] = PROG_EST[st]; return `<div class="li"><span class="ic" style="background:${bg};color:${c}">${ic}</span><div><b>${lbl}</b><small>${sub}</small></div></div>`; }).join('');
+
+  // ----- Conteos de pestañas -----
+  const proximas = P.rows.filter(r => !r.devuelto && r.estado !== 'atrasada');
+  const atrasadas = P.rows.filter(r => !r.devuelto && r.estado === 'atrasada');
+  const incidencias = P.rows.filter(r => r.incidencia && !r.devuelto);
+  const carr = [...new Set(P.rows.map(r => r.asignatura).filter(Boolean))];
+  const resp = [...new Set(P.rows.map(r => r.panolero).filter(Boolean))];
+  const mesLbl = base.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' });
+
+  $('#progRoot').innerHTML = `
+    <div class="ph"><div><h1>Devoluciones Programadas</h1><p>Planificación, seguimiento y cierre de devoluciones.</p></div>
+      <button class="bk" id="pBack">← Volver a devoluciones</button></div>
+    <div class="calbar">
+      <div class="nav"><button id="pPrev">‹</button>📅 ${cap(mesLbl)}<button id="pNext">›</button></div>
+      <div class="seg"><button data-r="dia" class="${P.rango === 'dia' ? 'on' : ''}">Día</button><button data-r="semana" class="${P.rango === 'semana' ? 'on' : ''}">Semana</button><button data-r="mes" class="${P.rango === 'mes' ? 'on' : ''}">Mes</button></div>
+      <select class="sede"><option>📍 ${escD(sede)}</option></select>
+    </div>
+    <div class="tlwrap">
+      <div class="today"><div class="wd">${cap(base.toLocaleDateString('es-CL', { weekday: 'long' }))}</div><div class="d">${base.getDate()}</div><div class="wd">${cap(base.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' }))}</div>
+        <div style="border-top:1px solid #eef1f5;margin:10px 0 6px;padding-top:8px;font-size:11px;color:#64748b">Devoluciones programadas</div><div class="big">${totDia}</div>
+        ${miniLine('confirmada', 'Confirmadas')}${miniLine('proceso', 'En proceso')}${miniLine('reprogramada', 'Reprogramadas')}${miniLine('atrasada', 'Atrasadas')}</div>
+      <div class="lanes"><div class="axis">${ejes.map(e => `<span>${e}</span>`).join('')}</div>${laneHtml}${nowMark}</div>
+      <div class="leg"><h4>Leyenda de estados</h4>${leg}</div>
+    </div>
+    <div class="filt"><div class="ft">🔽 Filtros</div>
+      <div class="fg"><label>Sede</label><select><option>${escD(sede)}</option></select></div>
+      <div class="fg"><label>Carrera</label><select id="pCarr"><option value="todas">Todas</option>${carr.map(x => `<option${x === P.fCarr ? ' selected' : ''}>${escD(x)}</option>`).join('')}</select></div>
+      <div class="fg"><label>Tipo de equipo</label><select id="pTipo"><option value="todos">Todos</option>${lanesCat.map(x => `<option${x === P.fTipo ? ' selected' : ''}>${x}</option>`).join('')}</select></div>
+      <div class="fg"><label>Responsable</label><select id="pResp"><option value="todos">Todos</option>${resp.map(x => `<option${x === P.fResp ? ' selected' : ''}>${escD(x)}</option>`).join('')}</select></div>
+      <a class="clr" id="pClr">↻ Limpiar filtros</a>
+    </div>
+    <div class="ptabs">
+      <button data-t="proximas" class="${P.tab === 'proximas' ? 'on' : ''}">📅 Próximas devoluciones (${proximas.length})</button>
+      <button data-t="atrasadas" class="${P.tab === 'atrasadas' ? 'on r' : ''}">⚠️ Devoluciones atrasadas (${atrasadas.length})</button>
+      <button data-t="incidencias" class="${P.tab === 'incidencias' ? 'on y' : ''}">🧰 Incidencias abiertas (${incidencias.length})</button>
+    </div>
+    <div class="pgrid">
+      <div class="card"><div class="tw"><table>
+        <thead><tr><th>Hora ↕</th><th>Estudiante ↕</th><th>Asignatura / Carrera</th><th>Equipo / Kit</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <tbody id="pBody"></tbody></table></div></div>
+      <div id="pDetail"></div>
+    </div>
+    <div class="sug"><span class="t">🎯 Sugerencias operativas (hoy)</span>
+      <span class="it">✅ ${atrasadas.length} devoluciones atrasadas · Gestionar primero</span>
+      <span class="it">📦 ${delDia.length} equipos del día · Priorizar recepción</span>
+      <span class="it">📊 Capacidad del pañol: ${Math.min(99, 60 + delDia.length)}%</span></div>`;
+
+  // Bindings
+  $('#pBack').onclick = viewDevoluciones;
+  const shift = dir => { const x = new Date(base); if (P.rango === 'mes') x.setMonth(x.getMonth() + dir); else x.setDate(x.getDate() + dir * (P.rango === 'semana' ? 7 : 1)); P.ref = isoDay(x); renderProg(); };
+  $('#pPrev').onclick = () => shift(-1);
+  $('#pNext').onclick = () => shift(1);
+  $('#progRoot').querySelectorAll('.calbar .seg button').forEach(b => b.onclick = () => { P.rango = b.dataset.r; renderProg(); });
+  $('#progRoot').querySelectorAll('.ptabs button').forEach(b => b.onclick = () => { P.tab = b.dataset.t; renderProg(); });
+  $('#pCarr').onchange = () => { P.fCarr = $('#pCarr').value; renderProgBody(); };
+  $('#pTipo').onchange = () => { P.fTipo = $('#pTipo').value; renderProgBody(); };
+  $('#pResp').onchange = () => { P.fResp = $('#pResp').value; renderProgBody(); };
+  $('#pClr').onclick = () => { P.fCarr = 'todas'; P.fTipo = 'todos'; P.fResp = 'todos'; renderProg(); };
+  $('#progRoot').querySelectorAll('.lanes .ev').forEach(e => e.onclick = () => { const r = PROG.rows.find(x => x.cod === e.dataset.cod); if (r) { PROG.sel = r; renderProgBody(); renderProgDetail(); } });
+  renderProgBody();
+  renderProgDetail();
+}
+
+function progListaTab() {
+  const P = PROG;
+  let base = P.rows.filter(r => {
+    if (P.tab === 'proximas') return !r.devuelto && r.estado !== 'atrasada';
+    if (P.tab === 'atrasadas') return !r.devuelto && r.estado === 'atrasada';
+    if (P.tab === 'incidencias') return r.incidencia && !r.devuelto;
+    return true;
+  });
+  return base.filter(r => {
+    if (P.fCarr !== 'todas' && (r.asignatura || '') !== P.fCarr) return false;
+    if (P.fTipo !== 'todos' && laneCat(r.categoria) !== P.fTipo) return false;
+    if (P.fResp !== 'todos' && (r.panolero || '') !== P.fResp) return false;
+    return true;
+  }).sort((a, b) => new Date(a.prog_devolucion || 0) - new Date(b.prog_devolucion || 0));
+}
+
+function renderProgBody() {
+  const P = PROG; const lista = progListaTab();
+  $('#pBody').innerHTML = lista.length ? lista.map(r => {
+    const st = progEstado(r); const [c, bg, ic, lbl] = PROG_EST[st];
+    const accion = r.devuelto ? `<button class="rc" data-act="ver">👁️ Ver</button>`
+      : st === 'reprogramada' ? `<button class="rc" data-act="dev">📅 Reprogramar</button>`
+      : `<button class="rc" data-act="dev">✔️ Recibir</button>`;
+    return `<tr data-cod="${escD(r.cod)}" class="${P.sel && P.sel.cod === r.cod ? 'sel' : ''}">
+      <td style="font-weight:700">${fmtHora(r.prog_devolucion)}</td>
+      <td>${escD((r.estudiante || '—'))}</td>
+      <td>${escD(r.asignatura || r.categoria || '—')}</td>
+      <td><div style="display:flex;align-items:center;gap:7px"><span>${icon(r.categoria || r.equipo)}</span>${escD(r.equipo || '—')}</div></td>
+      <td><span class="pill" style="background:${bg};color:${c}">${ic} ${lbl}</span></td>
+      <td><div class="acts">${accion}<button class="ib" data-act="chat" title="Contactar">💬</button><button class="ib" data-act="ver" title="Ver">👁️</button><button class="ib" data-act="mas">⋯</button></div></td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="6" class="muted" style="padding:22px;text-align:center;color:#94a3b8">No hay devoluciones en esta vista.</td></tr>`;
+  $('#pBody').querySelectorAll('tr[data-cod]').forEach(tr => {
+    const r = lista.find(x => x.cod === tr.dataset.cod);
+    tr.onclick = (ev) => {
+      const act = ev.target.closest('button')?.dataset.act;
+      if (act === 'mas') return;
+      if (act === 'chat') return toast('Contactar al estudiante (correo/WhatsApp)');
+      if (act === 'dev') { PROG.sel = r; renderProgBody(); renderProgDetail(); return registrarDevolucionRapida(r); }
+      PROG.sel = r; renderProgBody(); renderProgDetail();
+    };
+  });
+}
+
+// Reutiliza el flujo de recepción (pantalla 1) para una devolución concreta.
+function registrarDevolucionRapida(r) {
+  if (r.devuelto) { toast('Esta devolución ya fue registrada'); return; }
+  openModal(`<h3>↩️ Registrar devolución — ${escD(r.reserva_cod || r.cod)}</h3>
+    <p class="muted" style="font-size:12.5px;margin-top:0">${escD(r.estudiante || '')} · ${escD(r.equipo || '')}</p>
+    <div style="margin:8px 0"><label style="font-size:12px;color:#475569">Estado físico del equipo</label>
+      <select id="mrEst" style="width:100%;height:38px;border:1px solid #d7dce3;border-radius:9px;padding:0 10px;margin-top:4px">
+        <option value="bueno">En buen estado</option><option value="con_danio">Con daño</option><option value="inoperativo">Inoperativo / faltante</option></select></div>
+    <div style="margin:8px 0"><label style="font-size:12px;color:#475569">Observaciones</label>
+      <textarea id="mrObs" style="width:100%;min-height:60px;border:1px solid #d7dce3;border-radius:9px;padding:8px;margin-top:4px" placeholder="Opcional…"></textarea></div>
+    <button class="btn full" id="mrOk" style="margin-top:6px;width:100%;border:0;border-radius:10px;padding:11px;background:#0d9488;color:#fff;font-weight:700;cursor:pointer">✔️ Registrar devolución</button>`);
+  $('#mrOk').onclick = async () => {
+    try {
+      const resp = await api('/recibir', { method: 'POST', body: { prestamo_id: Number(r.id), condicion_retorno: $('#mrEst').value, observacion: ($('#mrObs').value || '').trim() || null } });
+      closeModal(); toast(resp.requiere_reposicion ? 'Devolución con daño: bloqueo por reposición' : 'Devolución registrada');
+      viewDevolucionesProg();
+    } catch (e) { toast(e.message); }
+  };
+}
+
+function renderProgDetail() {
+  const el = $('#pDetail'); if (!el) return;
+  const r = PROG.sel;
+  if (!r) { el.innerHTML = `<div class="dp"><div class="dh"><b>Detalle de devolución</b></div><div class="empty">Selecciona una devolución para ver su detalle, línea de tiempo y recomendaciones.</div></div>`; return; }
+  const st = progEstado(r); const [c, bg, ic, lbl] = PROG_EST[st];
+  const sede = (ME.sedes && (ME.sedes.find(s => s.id === SEDE) || {}).nombre) || 'Sede activa';
+  const step = (cls, t, sub) => `<div class="st ${cls}"><b>${t}</b><small>${sub}</small></div>`;
+  el.innerHTML = `<div class="dp">
+    <div class="dh"><b>Detalle de devolución</b><button class="x" id="pClose" style="border:0;background:transparent;font-size:18px;color:#94a3b8;cursor:pointer">×</button></div>
+    <div class="top"><div class="ph2">${icon(r.categoria || r.equipo)}</div><div style="flex:1"><b>${escD(r.equipo || r.categoria || '—')}</b><small>Reserva ${escD(r.reserva_cod || r.cod)}</small></div><span class="pill" style="background:${bg};color:${c}">${ic} ${lbl}</span></div>
+    <div class="sh">📄 Información de la reserva</div>
+    <div class="kv"><span class="i">👤</span>${escD(r.estudiante || '—')}</div>
+    <div class="kv"><span class="i">📘</span>${escD(r.asignatura || r.categoria || '—')}</div>
+    <div class="kv"><span class="i">📅</span>Retiro: ${fFechaHora(r.retiro || r.fecha_salida)}</div>
+    <div class="kv"><span class="i">↩️</span><span class="hl">Devolución programada: ${fFechaHora(r.prog_devolucion)}</span></div>
+    <div class="kv"><span class="i">📍</span>Sede: ${escD(sede)}</div>
+    <div class="sh">📦 Equipamiento y accesorios esperados</div>
+    <div class="eqrow"><span>${escD(r.equipo || r.categoria || '—')}${r.n_serie ? ' · ' + escD(r.n_serie) : ''}</span><b>1</b></div>
+    ${r.modelo ? `<div class="eqrow"><span style="color:#64748b">Modelo: ${escD(r.modelo)}</span><span></span></div>` : ''}
+    <div class="sh">🕒 Línea de tiempo de la reserva</div>
+    <div class="vt">
+      ${step('done', 'Reserva creada', fFechaHora(r.retiro))}
+      ${step(r.fecha_salida ? 'done' : '', 'Equipos entregados', r.fecha_salida ? fFechaHora(r.fecha_salida) + (r.panolero ? ' · ' + escD(r.panolero) : '') : 'Pendiente')}
+      ${step(r.devuelto ? 'done' : 'now', 'Devolución programada', fFechaHora(r.prog_devolucion))}
+      ${step(r.devuelto ? 'done' : '', 'Recepción y cierre', r.devuelto ? fFechaHora(r.fecha_retorno) : 'Pendiente')}
+    </div>
+    <div class="sh">✨ Recomendaciones de priorización</div>
+    <div class="rec">
+      ${st === 'atrasada' ? '<div class="r">⚠️ Devolución atrasada: contactar al estudiante.</div>' : '<div class="r">✓ Equipo con alta demanda: priorizar recepción.</div>'}
+      <div class="r">✓ Verificar accesorios completos antes del cierre.</div>
+      <div class="r">✓ Registrar condición y fotografías del estado.</div>
+    </div>
+    <div class="dbtns">
+      ${r.devuelto ? '<button class="tl" id="pVer">👁️ Ver comprobante</button>' : '<button class="tl" id="pConf">✔️ Confirmar recepción</button>'}
+      <button id="pRep">↻ Reprogramar</button><button id="pCont">💬 Contactar</button></div>
+  </div>`;
+  $('#pClose').onclick = () => { PROG.sel = null; renderProgBody(); renderProgDetail(); };
+  if ($('#pConf')) $('#pConf').onclick = () => registrarDevolucionRapida(r);
+  if ($('#pVer')) $('#pVer').onclick = () => toast('Comprobante de la devolución');
+  $('#pRep').onclick = () => toast('Reprogramar la fecha de devolución');
+  $('#pCont').onclick = () => toast('Contactar al estudiante');
+}
+
+// ----- Pañolero: Recibir (naranja) — legado -----
 async function viewRecibir() {
   h(`<h2 class="page" style="color:var(--recibir)">Recibir devoluciones</h2><div id="list"></div>`);
   const pr = await api('/por-recibir');
