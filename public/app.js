@@ -478,12 +478,13 @@ const INVDASH_CSS = `
 .invd .prog .fill{height:100%;background:linear-gradient(90deg,#2563eb,#16a34a);border-radius:6px}
 .invd .tl{position:relative;padding-left:4px}
 .invd .tl .axis{display:flex;justify-content:space-between;font-size:10.5px;color:#9aa3af;margin-bottom:6px}
-.invd .tl .lane{position:relative;height:30px;background:#f6f8fb;border-radius:8px;margin:6px 0}
-.invd .tl .lane .blk{position:absolute;top:5px;height:20px;border-radius:5px;opacity:.9}
-.invd .tl .lane.ent .blk{background:#2563eb}.invd .tl .lane.dev .blk{background:#16a34a}
+.invd .tl .lane{position:relative;height:34px;background:#f1f5fb;border-radius:9px;margin:5px 0}
+.invd .tl .lane .blk{position:absolute;top:6px;height:22px;border-radius:6px;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.invd .tl .lane.ent .blk{background:#5da8e8}.invd .tl .lane.dev .blk{background:#4fcfb3}
 .invd .tl .lanelb{font-size:12px;color:#4b5563;font-weight:600;display:flex;align-items:center;gap:6px;margin-top:8px}
-.invd .tl .now{position:absolute;top:16px;bottom:4px;width:2px;background:var(--b);z-index:3}
-.invd .tl .now .pin{position:absolute;top:-16px;left:50%;transform:translateX(-50%);background:var(--b);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:9px;white-space:nowrap}
+.invd .tl .now{position:absolute;top:2px;bottom:6px;width:2px;background:var(--b);z-index:4}
+.invd .tl .now::after{content:"";position:absolute;left:50%;top:0;transform:translateX(-50%);width:9px;height:9px;border-radius:50%;background:var(--b)}
+.invd .tl .now .pin{position:absolute;top:-4px;left:50%;transform:translateX(-50%);background:var(--b);color:#fff;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:9px;white-space:nowrap;box-shadow:0 1px 5px rgba(37,99,235,.45)}
 .invd .wkgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:4px}
 .invd .wkcell{border:1px solid #eef1f5;border-radius:10px;padding:8px 3px;text-align:center;background:#f9fafb}
 .invd .wkcell.has{background:var(--b2);border-color:#cfe0ff}
@@ -501,9 +502,11 @@ const INVDASH_CSS = `
 .invd .filt{background:#fff;border:1px solid #eceff3;border-radius:14px;padding:14px 16px;display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px}
 .invd .filt .ft{display:flex;align-items:center;gap:8px;color:#374151;font-weight:600;font-size:13px}
 .invd .filt .fg{display:flex;flex-direction:column;gap:3px;min-width:150px}
+.invd .filt .fg.srchfg{min-width:240px;flex:1}
 .invd .filt .fg label{font-size:11px;color:#6b7280}
-.invd .filt select{border:1px solid #d7dce3;border-radius:9px;padding:8px 10px;font-size:13px;background:#fff}
-.invd .filt a{margin-left:auto;color:var(--b);font-size:13px;font-weight:600;cursor:pointer;text-decoration:none}
+.invd .filt select,.invd .filt input{width:100%;box-sizing:border-box;height:38px;border:1px solid #d7dce3;border-radius:9px;padding:8px 10px;font-size:13px;background:#fff;color:#1f2937;font-family:inherit}
+.invd .filt input::placeholder{color:#9aa3af}
+.invd .filt a{margin-left:auto;color:var(--b);font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap}
 .invd .tbl{background:#fff;border:1px solid #eceff3;border-radius:14px;padding:16px}
 .invd .tbl .tbh{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
 .invd .tbl .tbh h3{margin:0;font-size:16px;font-weight:700}
@@ -541,11 +544,17 @@ async function viewInventarioDash(rango = 'hoy', modo = 'programadas', ref = nul
   // HOY → franja horaria del día; SEMANA → 7 días marcando entregas; MES → por semanas.
   let timelineTitulo, timelineHTML;
   if (rango === 'hoy') {
-    const AX0 = 8, AX1 = 19, SPAN = AX1 - AX0;
+    // Eje horario dinámico: incluye las horas reales de retiros/devoluciones (y 08–19 por defecto).
+    const horasT = [...d.entregas.map(a => a.fecha_inicio), ...d.devoluciones.map(p => p.esperada || p.fecha_salida)]
+      .filter(Boolean).map(t => { const x = new Date(t); return x.getHours() + x.getMinutes() / 60; }).filter(v => !isNaN(v));
+    let AX0 = 8, AX1 = 19;
+    if (horasT.length) { AX0 = Math.max(5, Math.min(8, Math.floor(Math.min(...horasT)))); AX1 = Math.min(23, Math.max(19, Math.ceil(Math.max(...horasT)))); }
+    const SPAN = AX1 - AX0;
     const pos = t => { const dt = new Date(t); const hh = dt.getHours() + dt.getMinutes() / 60; return Math.max(0, Math.min(100, (hh - AX0) / SPAN * 100)); };
     const ejes = []; for (let hgt = AX0; hgt <= AX1; hgt++) ejes.push(('0' + hgt).slice(-2) + ':00');
-    const blkEnt = d.entregas.map(a => { const l = pos(a.fecha_inicio); const r = pos(a.fecha_fin || a.fecha_inicio); const w = Math.max(3, r - l); return `<div class="blk" style="left:${l}%;width:${w}%" title="${escD(a.estudiante)} · ${fmtHora(a.fecha_inicio)}"></div>`; }).join('');
-    const blkDev = d.devoluciones.map(p => { const l = pos(p.esperada || p.fecha_salida); return `<div class="blk" style="left:${l}%;width:4%" title="${escD(p.estudiante)}"></div>`; }).join('');
+    // Cada entrega/devolución es un bloque pequeño en su hora (agrupa por cantidad, nunca abarca el día).
+    const blkEnt = d.entregas.map(a => { const l = pos(a.fecha_inicio); const durH = Math.max(0.5, (new Date(a.fecha_fin || a.fecha_inicio) - new Date(a.fecha_inicio)) / 3600000); const w = Math.max(2.4, Math.min(7, durH / SPAN * 100)); return `<div class="blk" style="left:${Math.min(l, 100 - w)}%;width:${w}%" title="${escD(a.estudiante)} · ${fmtHora(a.fecha_inicio)}"></div>`; }).join('');
+    const blkDev = d.devoluciones.map(p => { const l = pos(p.esperada || p.fecha_salida); const w = 3; return `<div class="blk" style="left:${Math.min(l, 100 - w)}%;width:${w}%" title="${escD(p.estudiante)}"></div>`; }).join('');
     const nowD = new Date(); const nowH = nowD.getHours() + nowD.getMinutes() / 60;
     const esHoy = !ref || ref === hoyISO;
     const nowMark = (esHoy && nowH >= AX0 && nowH <= AX1) ? `<div class="now" style="left:${pos(nowD)}%"><span class="pin">${fmtHora(nowD)}</span></div>` : '';
@@ -553,9 +562,10 @@ async function viewInventarioDash(rango = 'hoy', modo = 'programadas', ref = nul
     timelineHTML = `<div class="tl">
           <div class="axis">${ejes.map(e => `<span>${e}</span>`).join('')}</div>
           <div class="lanelb">📦 Entregas (${d.entregas.length})</div>
-          <div class="lane ent">${blkEnt}${nowMark}</div>
+          <div class="lane ent">${blkEnt}</div>
           <div class="lanelb">↩️ Devoluciones (${d.devoluciones.length})</div>
           <div class="lane dev">${blkDev}</div>
+          ${nowMark}
         </div>`;
   } else if (rango === 'semana') {
     // Semana = ventana de 7 días que PARTE en la fecha elegida (no se fuerza al lunes).
@@ -628,7 +638,7 @@ async function viewInventarioDash(rango = 'hoy', modo = 'programadas', ref = nul
         <option value="confirmadas">Entregas confirmadas (hoy)</option>
         <option value="devoluciones">Devoluciones esperadas</option>
         <option value="stock">Alertas de stock</option></select></div>
-      <div class="fg"><label>Buscar</label><input class="srch" id="tSrch" placeholder="Estudiante, asignatura o equipo…" style="min-width:220px"></div>
+      <div class="fg srchfg"><label>Buscar</label><input id="tSrch" placeholder="Estudiante, asignatura o equipo…"></div>
       <a id="fClear">Limpiar filtros</a>
     </div>
     <div class="tbl"><div id="invTblWrap"></div></div>`;
@@ -734,15 +744,26 @@ const ENTP_CSS = `
 .entp .cal .caltop{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .entp .cal .nav{display:flex;align-items:center;gap:10px;font-weight:700;font-size:13.5px}
 .entp .cal .nav button{border:1px solid #d7dce3;background:#fff;border-radius:8px;padding:4px 9px;cursor:pointer}
-.entp .vt{position:relative;border-top:1px solid #eef1f5;height:560px}
+.entp .vt{position:relative;border-top:1px solid #eef1f5;padding-top:6px}
 .entp .vt .hr{position:absolute;left:0;right:0;border-top:1px dashed #eef1f5;font-size:10.5px;color:#9aa3af;padding-left:2px}
-.entp .vt .ev{position:absolute;left:62px;right:12px;border-radius:9px;padding:9px 11px;color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08);overflow:hidden;cursor:pointer;border-left:4px solid rgba(255,255,255,.6)}
-.entp .vt .ev .t1{display:flex;justify-content:space-between;font-size:12px;font-weight:700}
-.entp .vt .ev .t2{font-size:11.5px;opacity:.95}
-.entp .vt .ev .bg{position:absolute;right:9px;bottom:7px;font-size:10px;font-weight:700;background:rgba(255,255,255,.25);padding:1px 7px;border-radius:999px}
+.entp .vt .ev{position:absolute;border-radius:10px;padding:8px 11px;background:#fff;color:#1f2937;box-shadow:0 1px 3px rgba(0,0,0,.08);overflow:hidden;cursor:pointer;border:1px solid #eef1f5;border-left:5px solid #94a3b8}
+.entp .vt .ev.u-verde{border-left-color:#22c55e;background:#f3fbf6}
+.entp .vt .ev.u-amar{border-left-color:#f59e0b;background:#fff9ef}
+.entp .vt .ev.u-rojo{border-left-color:#ef4444;background:#fdf3f3}
+.entp .vt .ev .t1{display:flex;justify-content:space-between;gap:8px;font-size:12px;font-weight:800;align-items:center}
+.entp .vt .ev .t1 .hrng{color:#6b7280;font-weight:700;font-size:11px;white-space:nowrap}
+.entp .vt .ev .t2{font-size:11.5px;color:#4b5563;margin-top:1px}
+.entp .vt .ev .bg{display:inline-block;margin-top:5px;font-size:10px;font-weight:800;padding:2px 9px;border-radius:999px}
+.entp .vt .ev.u-verde .bg{background:#eafaf0;color:#16a34a}
+.entp .vt .ev.u-amar .bg{background:#fff7e6;color:#b45309}
+.entp .vt .ev.u-rojo .bg{background:#fdeeee;color:#dc2626}
 .entp .vt .ev.sel{outline:3px solid #2563eb;outline-offset:1px}
-.entp .vt .nowl{position:absolute;left:0;right:0;height:2px;background:#2563eb;z-index:4}
-.entp .vt .nowl .lb{position:absolute;left:0;top:-9px;background:#2563eb;color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:9px}
+.entp .vt .nowl{position:absolute;left:0;right:0;height:2px;background:#2563eb;z-index:5}
+.entp .vt .nowl .lb{position:absolute;left:0;top:-9px;background:#2563eb;color:#fff;font-size:10px;font-weight:800;padding:1px 7px;border-radius:9px}
+.entp .vt .nowl::after{content:"";position:absolute;left:52px;top:-3px;width:8px;height:8px;border-radius:50%;background:#2563eb}
+.entp .ulegend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:#6b7280;margin:2px 2px 10px}
+.entp .ulegend span{display:inline-flex;align-items:center;gap:5px}
+.entp .ulegend i{width:10px;height:10px;border-radius:3px;display:inline-block}
 .entp .chips{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:12px}
 @media(max-width:620px){.entp .chips{grid-template-columns:repeat(2,1fr)}}
 .entp .chip{background:#fff;border:1px solid #eceff3;border-radius:11px;padding:10px;text-align:center}
@@ -788,24 +809,6 @@ const ENTP_CSS = `
 .entp .mwk.cur{outline:2px solid #2563eb;outline-offset:-1px}
 .entp .mwk .ml{font-size:12.5px;color:#374151;font-weight:600}
 .entp .mwk .mn{font-size:12px;font-weight:700;color:#2563eb;white-space:nowrap}
-/* Lista del día coloreada por urgencia (verde lejos / amarillo ≤4h / rojo ≤2h) */
-.entp .daylist{max-height:600px;overflow:auto}
-.entp .dgh{font-weight:700;font-size:12.5px;color:#374151;margin:4px 2px 8px}
-.entp .drow{display:flex;gap:10px;align-items:center;padding:9px 11px;border:1px solid #eef1f5;border-radius:10px;margin-bottom:7px;background:#fff;cursor:pointer;border-left-width:5px;border-left-style:solid}
-.entp .drow.sel{outline:2px solid #2563eb;outline-offset:1px}
-.entp .drow.u-verde{border-left-color:#22c55e}
-.entp .drow.u-amar{border-left-color:#f59e0b}
-.entp .drow.u-rojo{border-left-color:#ef4444}
-.entp .drow .hh{font-weight:800;font-size:13px;width:70px;flex:0 0 auto}
-.entp .drow.u-verde .hh{color:#16a34a}.entp .drow.u-amar .hh{color:#b45309}.entp .drow.u-rojo .hh{color:#dc2626}
-.entp .drow .bd b{font-size:13px}.entp .drow .bd small{display:block;color:#6b7280;font-size:11.5px}
-.entp .drow .ub{margin-left:auto;font-size:10px;font-weight:800;padding:3px 9px;border-radius:999px;white-space:nowrap}
-.entp .drow.u-verde .ub{background:#eafaf0;color:#16a34a}
-.entp .drow.u-amar .ub{background:#fff7e6;color:#b45309}
-.entp .drow.u-rojo .ub{background:#fdeeee;color:#dc2626}
-.entp .ulegend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:#6b7280;margin:2px 2px 10px}
-.entp .ulegend span{display:inline-flex;align-items:center;gap:5px}
-.entp .ulegend i{width:10px;height:10px;border-radius:3px;display:inline-block}
 @media print{body *{visibility:hidden}#printArea,#printArea *{visibility:visible}#printArea{position:absolute;left:0;top:0;width:100%}}
 `;
 function viewEntregasPlan(rango = 'hoy', ref = null, keep = null, opts = {}) {
@@ -858,18 +861,39 @@ function viewEntregasPlan(rango = 'hoy', ref = null, keep = null, opts = {}) {
       return { cls: 'u-verde', lbl: 'A tiempo' };
     };
 
-    // Vista DÍA: lista agrupada por día, coloreada por urgencia (como la pantalla adjunta).
-    const dayListHtml = () => {
+    // Vista DÍA: línea de tiempo vertical (como la pantalla adjunta), coloreada por urgencia.
+    // Los solapamientos se reparten en columnas para que ninguna tarjeta tape a otra.
+    const dayTimelineHtml = () => {
       const vis = idxVis();
-      if (!vis.length) return '<p class="muted" style="font-size:12.5px;padding:8px">No hay entregas para este día' + (filtro ? ' con ese filtro' : '') + '.</p>';
-      const grupos = {};
-      vis.forEach(i => { const e = E[i]; const k = new Date(e.fecha_inicio).toLocaleDateString('es-CL', { weekday: 'long', day: '2-digit', month: 'short' }); (grupos[k] = grupos[k] || []).push(i); });
       const leg = `<div class="ulegend"><span><i style="background:#22c55e"></i>A tiempo</span><span><i style="background:#f59e0b"></i>≤ 4 h</span><span><i style="background:#ef4444"></i>≤ 2 h / atrasada</span></div>`;
-      return leg + '<div class="daylist">' + Object.keys(grupos).map(k => `<div class="dgh">${cap(k)}</div>` +
-        grupos[k].map(i => { const e = E[i]; const u = urgencia(e); return `<div class="drow ${u.cls} ${i === sel ? 'sel' : ''}" data-i="${i}">
-          <div class="hh">🕐 ${fmtHora(e.fecha_inicio)}</div>
-          <div class="bd"><b>${RES(e.id)}</b><small>${escD(e.item)} · ${escD(e.estudiante)}${e.por_individualizar ? ' · por asignar unidad' : ''}</small></div>
-          <span class="ub">${u.lbl}</span></div>`; }).join('')).join('') + '</div>';
+      if (!vis.length) return leg + '<p class="muted" style="font-size:12.5px;padding:8px">No hay entregas para este día' + (filtro ? ' con ese filtro' : '') + '.</p>';
+      // Eje dinámico: incluye las horas reales (y 08–19 por defecto).
+      const hrsArr = vis.map(i => { const x = new Date(E[i].fecha_inicio); return x.getHours() + x.getMinutes() / 60; });
+      const h0 = Math.max(5, Math.min(8, Math.floor(Math.min(...hrsArr))));
+      const h1 = Math.min(23, Math.max(19, Math.ceil(Math.max(...hrsArr)) + 1));
+      const SPAN = h1 - h0, H = Math.max(520, SPAN * 54);
+      const topPx = t => { const x = new Date(t); const hh = x.getHours() + x.getMinutes() / 60; return Math.max(0, Math.min(H - 10, (hh - h0) / SPAN * H)); };
+      let hrs = ''; for (let hh = h0; hh <= h1; hh++) { const y = (hh - h0) / SPAN * H; hrs += `<div class="hr" style="top:${y}px">${('0' + hh).slice(-2)}:00</div>`; }
+      // Reparto en columnas según solapamiento temporal.
+      const its = vis.map(i => { const s = new Date(E[i].fecha_inicio).getTime(); let f = new Date(E[i].fecha_fin || E[i].fecha_inicio).getTime(); if (!(f > s)) f = s + 60 * 60000; f = Math.min(f, s + 3 * 3600000); return { i, s, f }; }).sort((a, b) => a.s - b.s);
+      const colEnd = [];
+      its.forEach(it => { let c = 0; while (c < colEnd.length && colEnd[c] > it.s) c++; it.col = c; colEnd[c] = it.f; });
+      const ncol = Math.max(1, colEnd.length);
+      const LEFT = 52; // ancho de la columna de horas
+      const cards = its.map(it => {
+        const e = E[it.i]; const u = urgencia(e); const top = topPx(e.fecha_inicio);
+        const hgt = Math.max(62, Math.min(H - top, (it.f - it.s) / 3600000 / SPAN * H));
+        const wpct = 100 / ncol; const leftPct = it.col * wpct;
+        return `<div class="ev ${u.cls} ${it.i === sel ? 'sel' : ''}" data-i="${it.i}"
+          style="top:${top}px;height:${hgt}px;left:calc(${LEFT}px + ${leftPct}% - ${LEFT * leftPct / 100}px + 2px);width:calc(${wpct}% - ${LEFT * wpct / 100}px - 6px)">
+          <div class="t1"><span>${RES(e.id)} · Entrega</span><span class="hrng">${fmtHora(e.fecha_inicio)}–${fmtHora(e.fecha_fin || e.fecha_inicio)}</span></div>
+          <div class="t2">${escD(e.item)} (x1)${e.por_individualizar ? ' · por asignar' : ''}</div>
+          <span class="bg">${u.lbl}</span></div>`;
+      }).join('');
+      const esHoyBase = !ref || ref === isoDay(new Date());
+      const nh = now.getHours() + now.getMinutes() / 60;
+      const nowL = (esHoyBase && nh >= h0 && nh <= h1) ? `<div class="nowl" style="top:${topPx(now)}px"><span class="lb">Ahora ${fmtHora(now)}</span></div>` : '';
+      return leg + `<div class="vt" style="height:${H}px">${hrs}${cards}${nowL}</div>`;
     };
 
     // Vista SEMANA: grilla de 7 días desde la fecha base (clic → ver ese día).
@@ -898,7 +922,7 @@ function viewEntregasPlan(rango = 'hoy', ref = null, keep = null, opts = {}) {
       return rows + `<p class="muted" style="font-size:11px;margin:10px 2px 0">Toca una semana para verla por días.</p>`;
     };
 
-    const centerHtml = () => rango === 'hoy' ? dayListHtml() : rango === 'semana' ? weekGridHtml() : monthWeeksHtml();
+    const centerHtml = () => rango === 'hoy' ? dayTimelineHtml() : rango === 'semana' ? weekGridHtml() : monthWeeksHtml();
 
     const nextHtml = () => { const vis = idxVis(); return vis.length ? vis.map(i => {
       const e = E[i]; const [elab, ecls] = estadoDe(e);
@@ -1058,8 +1082,8 @@ function viewEntregasPlan(rango = 'hoy', ref = null, keep = null, opts = {}) {
 
     const renderCenter = () => { $('#epCenter').innerHTML = centerHtml(); bindCenter(); };
     const bindCenter = () => {
-      // Día: seleccionar una entrega.
-      $('#epRoot').querySelectorAll('#epCenter .drow').forEach(b => b.onclick = () => selectIdx(Number(b.dataset.i)));
+      // Día: seleccionar una entrega (tarjeta de la línea de tiempo).
+      $('#epRoot').querySelectorAll('#epCenter .ev').forEach(b => b.onclick = () => selectIdx(Number(b.dataset.i)));
       // Semana: clic en un día → ver ese día.
       $('#epRoot').querySelectorAll('#epCenter .wkcell[data-day]').forEach(b => b.onclick = () => viewEntregasPlan('hoy', b.dataset.day, { filtro }));
       // Mes: clic en una semana → ver esa semana por días.
