@@ -1147,8 +1147,11 @@ const HIST_CSS = `
 .hist .tbar .srch::before{content:"🔎";position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:13px;opacity:.6}
 .hist .tbar .b{height:40px;border:1px solid #d7dce3;background:#fff;border-radius:10px;padding:0 14px;font-size:13px;font-weight:700;cursor:pointer;color:#334155;display:flex;align-items:center;gap:7px}
 .hist .tbar .b.tl{background:#0d9488;border-color:#0d9488;color:#fff}
-.hist .grid{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:14px;align-items:start}
-@media(max-width:1150px){.hist .grid{grid-template-columns:1fr}}
+.hist .grid{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:14px;align-items:start}
+/* El panel va al costado SÓLO si hay espacio para mostrar también todas las
+   columnas de la tabla; si no, la tabla ocupa todo el ancho y el detalle se
+   apila debajo a ancho completo (todos los campos siempre visibles). */
+@media(max-width:1480px){.hist .grid{grid-template-columns:1fr}}
 .hist .card{background:#fff;border:1px solid #eceff4;border-radius:14px;overflow:hidden}
 .hist .tw{overflow-x:auto}
 .hist table{width:100%;border-collapse:collapse;min-width:720px}
@@ -1177,8 +1180,9 @@ const HIST_CSS = `
 .hist .pag .pg button:disabled{opacity:.45;cursor:default}
 .hist .pag .mut{color:#64748b;font-size:12.5px}
 /* Panel de detalle lateral */
-.hist .dp{background:#fff;border:1px solid #eceff4;border-radius:14px;padding:16px;position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}
-.hist .dp .kgrid{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px}
+.hist .dp{background:#fff;border:1px solid #eceff4;border-radius:14px;padding:16px}
+@media(min-width:1481px){.hist .dp{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}}
+.hist .dp .kgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:4px 18px}
 .hist .dp .kgrid.one{grid-template-columns:1fr}
 .hist .dp .kv .l{color:#64748b;display:block;font-size:11px}
 .hist .dp .sech{font-size:12px;font-weight:800;color:#0f172a;text-transform:none;margin-bottom:4px;display:flex;align-items:center;gap:6px}
