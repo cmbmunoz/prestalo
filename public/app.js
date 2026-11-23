@@ -1115,21 +1115,381 @@ function viewEntregasPlan(rango = 'hoy', ref = null, keep = null, opts = {}) {
   })();
 }
 
-// ===================== Historial de entregas =====================
+// ===================== Historial de entregas (dashboard de gestión) =====================
+const HIST_CSS = `
+.hist{color:#0f172a}
+.hist .hhd{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.hist .hhd h1{margin:0;font-size:22px;font-weight:800;color:#0f172a}
+.hist .hhd p{margin:3px 0 0;color:#64748b;font-size:13px}
+.hist .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px}
+@media(max-width:1000px){.hist .kpis{grid-template-columns:repeat(2,1fr)}}
+.hist .k{position:relative;border-radius:14px;padding:16px;border:1px solid #eceff4;display:flex;gap:12px;align-items:flex-start}
+.hist .k .ic{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;flex:0 0 auto}
+.hist .k .lb{font-size:12.5px;color:#475569;font-weight:600}
+.hist .k .vl{font-size:30px;font-weight:800;line-height:1.05;margin:2px 0}
+.hist .k .sb{font-size:11.5px;color:#64748b}
+.hist .k .tr{position:absolute;right:14px;top:16px;font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px}
+.hist .k.g{background:#eefaf2}.hist .k.g .ic{background:#d7f3e1;color:#15803d}.hist .k.g .vl{color:#15803d}.hist .k.g .tr{background:#d7f3e1;color:#15803d}
+.hist .k.b{background:#eef4fe}.hist .k.b .ic{background:#d8e6fd;color:#2563eb}.hist .k.b .vl{color:#1d4ed8}.hist .k.b .tr{background:#d8e6fd;color:#2563eb}
+.hist .k.r{background:#fdeeee}.hist .k.r .ic{background:#fbd9d9;color:#dc2626}.hist .k.r .vl{color:#dc2626}.hist .k.r .tr{background:#fbd9d9;color:#dc2626}
+.hist .k.a{background:#fef4e6}.hist .k.a .ic{background:#fbe4c2;color:#b45309}.hist .k.a .vl{color:#b45309}.hist .k.a .tr{background:#fbe4c2;color:#b45309}
+.hist .filt{background:#fff;border:1px solid #eceff4;border-radius:14px;padding:12px 16px;display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px}
+.hist .filt .ft{display:flex;align-items:center;gap:8px;color:#334155;font-weight:700;font-size:13px;padding-bottom:7px}
+.hist .filt .fg{display:flex;flex-direction:column;gap:3px;min-width:150px}
+.hist .filt .fg label{font-size:11px;color:#64748b}
+.hist .filt select,.hist .filt input{height:38px;box-sizing:border-box;border:1px solid #d7dce3;border-radius:9px;padding:8px 10px;font-size:13px;background:#fff;color:#0f172a;font-family:inherit;width:100%}
+.hist .filt .clr{margin-left:auto;color:#0d9488;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;padding-bottom:8px;white-space:nowrap}
+.hist .tbar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.hist .tbar .srch{flex:1;min-width:220px;position:relative}
+.hist .tbar .srch input{width:100%;box-sizing:border-box;height:40px;border:1px solid #d7dce3;border-radius:10px;padding:8px 12px 8px 34px;font-size:13px;background:#fff;font-family:inherit}
+.hist .tbar .srch::before{content:"🔎";position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:13px;opacity:.6}
+.hist .tbar .b{height:40px;border:1px solid #d7dce3;background:#fff;border-radius:10px;padding:0 14px;font-size:13px;font-weight:700;cursor:pointer;color:#334155;display:flex;align-items:center;gap:7px}
+.hist .tbar .b.tl{background:#0d9488;border-color:#0d9488;color:#fff}
+.hist .grid{display:grid;grid-template-columns:1fr 340px;gap:14px;align-items:start}
+@media(max-width:1050px){.hist .grid{grid-template-columns:1fr}}
+.hist .card{background:#fff;border:1px solid #eceff4;border-radius:14px;overflow:hidden}
+.hist .tw{overflow-x:auto}
+.hist table{width:100%;border-collapse:collapse;min-width:720px}
+.hist thead th{text-align:left;font-size:11px;color:#64748b;font-weight:700;padding:11px 12px;border-bottom:1px solid #eef1f5;white-space:nowrap;text-transform:none}
+.hist tbody td{padding:11px 12px;border-bottom:1px solid #f3f5f8;font-size:13px;color:#1f2937;vertical-align:middle}
+.hist tbody tr{cursor:pointer}
+.hist tbody tr:hover{background:#f8fafc}
+.hist tbody tr.sel{background:#e9f7f4;box-shadow:inset 3px 0 0 #0d9488}
+.hist .al b{display:block;font-weight:700}.hist .al small{color:#64748b;font-size:11.5px}
+.hist .rz{color:#0d9488;font-weight:700}
+.hist .eq{display:flex;align-items:center;gap:8px}
+.hist .eq .ei{width:26px;height:26px;border-radius:7px;background:#eef2f7;display:flex;align-items:center;justify-content:center;font-size:13px;flex:0 0 auto}
+.hist .fdt b{display:block;font-weight:600}.hist .fdt small{color:#94a3b8;font-size:11px}
+.hist .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap}
+.hist .pill.ok{background:#e7f8ee;color:#15803d}
+.hist .pill.pend{background:#fef3e2;color:#b45309}
+.hist .pill.atr{background:#fdecec;color:#dc2626}
+.hist .pill.inc{background:#fff2e0;color:#c2410c}
+.hist .acts{display:flex;gap:4px}
+.hist .acts button{width:30px;height:30px;border:1px solid #e6e9ef;background:#fff;border-radius:8px;cursor:pointer;color:#475569;font-size:13px}
+.hist .acts button:hover{background:#f1f5f9}
+.hist .pag{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px}
+.hist .pag .pg{display:flex;gap:4px;align-items:center}
+.hist .pag .pg button{min-width:32px;height:32px;border:1px solid #e6e9ef;background:#fff;border-radius:8px;cursor:pointer;font-size:12.5px;color:#334155;padding:0 8px}
+.hist .pag .pg button.on{background:#0d9488;border-color:#0d9488;color:#fff;font-weight:700}
+.hist .pag .pg button:disabled{opacity:.45;cursor:default}
+.hist .pag .mut{color:#64748b;font-size:12.5px}
+/* Panel de detalle lateral */
+.hist .dp{background:#fff;border:1px solid #eceff4;border-radius:14px;padding:16px;position:sticky;top:12px}
+.hist .dp .dh{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.hist .dp .dh b{font-size:15px}
+.hist .dp .x{border:0;background:transparent;font-size:18px;color:#94a3b8;cursor:pointer}
+.hist .dp .idrow{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}
+.hist .dp .idrow .cod{font-size:17px;font-weight:800}
+.hist .dp .kv{font-size:12.5px;color:#334155;margin:6px 0}
+.hist .dp .kv b{color:#0f172a}
+.hist .dp .sec{border-top:1px solid #eef1f5;margin-top:12px;padding-top:12px}
+.hist .dp .eqi{display:flex;align-items:center;gap:9px;padding:7px 0}
+.hist .dp .eqi .ei{width:30px;height:30px;border-radius:8px;background:#eef2f7;display:flex;align-items:center;justify-content:center}
+.hist .dp .eqi b{font-size:12.5px;display:block}.hist .dp .eqi small{display:block;color:#64748b;font-size:11px}
+.hist .dp .obs{background:#f8fafc;border:1px solid #eef1f5;border-radius:9px;padding:9px;font-size:12px;color:#64748b;min-height:40px}
+.hist .dp .btn{width:100%;border:0;border-radius:10px;padding:11px;font-size:13.5px;font-weight:700;cursor:pointer;margin-top:10px;display:flex;align-items:center;justify-content:center;gap:7px}
+.hist .dp .btn.tl{background:#0d9488;color:#fff}
+.hist .dp .btn.gh{background:#fff;border:1px solid #d7dce3;color:#334155}
+.hist .dp .empty{color:#94a3b8;font-size:13px;text-align:center;padding:30px 10px}
+/* ===== Detalle completo (pantalla 2) ===== */
+.hist .det .dhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.hist .det .dtt{display:flex;gap:12px;align-items:center}
+.hist .det .dtt .tk{width:46px;height:46px;border-radius:12px;background:#e9f7f4;color:#0d9488;display:flex;align-items:center;justify-content:center;font-size:22px}
+.hist .det .dtt h1{margin:0;font-size:21px;font-weight:800}
+.hist .det .dtt p{margin:2px 0 0;color:#64748b;font-size:12.5px}
+.hist .det .dbtns{display:flex;gap:8px;flex-wrap:wrap}
+.hist .det .b{height:38px;border:1px solid #d7dce3;background:#fff;border-radius:9px;padding:0 13px;font-size:12.5px;font-weight:700;cursor:pointer;color:#334155;display:flex;align-items:center;gap:7px}
+.hist .det .b.tl{background:#0d9488;border-color:#0d9488;color:#fff}
+.hist .det .stp{display:flex;align-items:center;background:#fff;border:1px solid #eceff4;border-radius:14px;padding:16px;gap:6px;margin-bottom:14px;overflow-x:auto}
+.hist .det .stp .st{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:120px;flex:1}
+.hist .det .stp .st .c{width:40px;height:40px;border-radius:50%;background:#e9f7f4;color:#0d9488;display:flex;align-items:center;justify-content:center;font-size:18px;position:relative}
+.hist .det .stp .st .c .chk{position:absolute;right:-3px;bottom:-3px;width:17px;height:17px;border-radius:50%;background:#16a34a;color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;border:2px solid #fff}
+.hist .det .stp .st .t{font-weight:700;font-size:12.5px}
+.hist .det .stp .st .d{font-size:11px;color:#64748b;text-align:center}
+.hist .det .stp .ln{height:2px;background:#cbe7e1;flex:1;min-width:20px;margin-top:-28px}
+.hist .det .cols{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:14px}
+@media(max-width:1000px){.hist .det .cols{grid-template-columns:1fr 1fr}}
+@media(max-width:560px){.hist .det .cols{grid-template-columns:1fr}}
+.hist .det .ic2{background:#fff;border:1px solid #eceff4;border-radius:12px;padding:14px}
+.hist .det .ic2 .hd{display:flex;align-items:center;gap:8px;color:#334155;font-weight:700;font-size:13px;margin-bottom:9px}
+.hist .det .ic2 .big{font-size:14.5px;font-weight:700}
+.hist .det .ic2 small{display:block;color:#64748b;font-size:11.5px;margin-top:2px}
+.hist .det .ic2 .ln2{font-size:12.5px;color:#334155;margin:4px 0}
+.hist .det .main2{display:grid;grid-template-columns:1.6fr 1fr;gap:12px;align-items:start}
+@media(max-width:1000px){.hist .det .main2{grid-template-columns:1fr}}
+.hist .det .box{background:#fff;border:1px solid #eceff4;border-radius:12px;padding:16px;margin-bottom:12px}
+.hist .det .box h3{margin:0 0 10px;font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
+.hist .det table.eq2{width:100%;border-collapse:collapse;min-width:480px}
+.hist .det .eq2 th{text-align:left;font-size:11px;color:#64748b;font-weight:700;padding:8px 10px;border-bottom:1px solid #eef1f5}
+.hist .det .eq2 td{padding:10px;border-bottom:1px solid #f3f5f8;font-size:12.5px}
+.hist .det .cond{display:inline-flex;align-items:center;gap:6px;font-size:12px}
+.hist .det .cond .dot{width:8px;height:8px;border-radius:50%;background:#16a34a}
+.hist .det .sign{background:#e7f8ee;border:1px solid #c7ecd4;border-radius:10px;padding:11px;font-size:12.5px;color:#15803d;margin-bottom:10px;display:flex;gap:8px;align-items:flex-start}
+.hist .det .sg{display:flex;justify-content:space-between;align-items:center;border:1px dashed #cbd5e1;border-radius:10px;padding:12px}
+.hist .det .sg .nm{font-family:'Segoe Script','Brush Script MT',cursive;font-size:20px;color:#334155}
+.hist .det .rsum{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+@media(max-width:700px){.hist .det .rsum{grid-template-columns:1fr}}
+.hist .det .rsum .rc{display:flex;gap:10px;align-items:center;border:1px solid #eceff4;border-radius:11px;padding:12px}
+.hist .det .rsum .rc .ri{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;background:#eef2f7}
+.hist .det .rsum .rc b{font-size:17px;font-weight:800;display:block}.hist .det .rsum .rc small{display:block;color:#64748b;font-size:11.5px}
+.hist .det .inc{background:#e7f8ee;border:1px solid #c7ecd4;border-radius:10px;padding:11px;font-size:12.5px;color:#15803d;display:flex;gap:8px;align-items:center}
+.hist .det .inc.bad{background:#fdecec;border-color:#f6cccc;color:#dc2626}
+`;
+let HIST = null;
+const ESTADOS = {
+  entregada: ['ok', '✔️', 'Entregada'], completada: ['ok', '✔️', 'Completada'],
+  pendiente: ['pend', '⏳', 'Pendiente'], atrasada: ['atr', '⏰', 'Atrasada'], incidencia: ['inc', '⚠️', 'Incidencia']
+};
+function fFechaDos(t) { if (!t) return '<span style="color:#cbd5e1">—</span>'; try { const d = new Date(t); return `<b>${d.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })}</b><small>${d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</small>`; } catch (e) { return '—'; } }
+function fFechaHora(t) { if (!t) return '—'; try { const d = new Date(t); return d.toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' }) + ' · ' + d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }); } catch (e) { return '—'; } }
+
 async function viewHistorialEntregas() {
-  h(`<h2 class="page">Historial de entregas</h2>
-     <p class="muted">Entregas y devoluciones registradas en la sede.</p>
-     <div id="hist">Cargando…</div>`);
-  let rows;
-  try { rows = await api('/entregas/historial'); } catch (e) { $('#hist').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
-  if (!rows.length) { $('#hist').innerHTML = '<p class="muted">Sin entregas registradas.</p>'; return; }
-  $('#hist').innerHTML = `<table style="width:100%"><thead><tr><th>Entrega</th><th>Estudiante</th><th>Equipo</th><th>Categoría</th><th>Pañolero</th><th>Estado</th><th>Devolución</th></tr></thead><tbody>${
-    rows.map(r => { const dev = r.estado === 'devuelto'; return `<tr>
-      <td>${fmtDate(r.fecha_salida)}</td><td>${escD(r.estudiante)}</td><td>${escD(r.equipo)}</td><td>${escD(r.categoria)}</td>
+  h(`<div class="hist"><style>${HIST_CSS}</style><div id="histRoot">Cargando…</div></div>`);
+  let d;
+  try { d = await api('/entregas/historial'); } catch (e) { $('#histRoot').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
+  const rows = Array.isArray(d) ? d : (d.rows || []);
+  const kpis = (d && d.kpis) || { realizadas: rows.length, pendientes: 0, atrasadas: 0, incidencias: 0 };
+  HIST = { rows, kpis, page: 1, perPage: 8, sel: null, fEstado: 'todos', fResp: 'todos', fDesde: '', fHasta: '', q: '' };
+  renderHist();
+}
+
+function histFiltradas() {
+  const H = HIST; const q = (H.q || '').toLowerCase();
+  return H.rows.filter(r => {
+    if (H.fEstado !== 'todos' && r.estado !== H.fEstado) return false;
+    if (H.fResp !== 'todos' && (r.panolero || '') !== H.fResp) return false;
+    if (H.fDesde && (!r.programada || new Date(r.programada) < new Date(H.fDesde))) return false;
+    if (H.fHasta && (!r.programada || new Date(r.programada) > new Date(H.fHasta + 'T23:59:59'))) return false;
+    if (q && !((r.cod + ' ' + (r.estudiante || '') + ' ' + (r.reserva_cod || '') + ' ' + (r.equipo || '') + ' ' + (r.asignatura || '')).toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+
+function renderHist() {
+  const H = HIST; const k = H.kpis;
+  const resp = [...new Set(H.rows.map(r => r.panolero).filter(Boolean))];
+  $('#histRoot').innerHTML = `
+    <div class="hhd"><div><h1>Historial de entregas</h1><p>Registro y trazabilidad de todas las entregas realizadas por el pañol.</p></div></div>
+    <div class="kpis">
+      <div class="k g"><div class="ic">✅</div><div><div class="lb">Entregas realizadas</div><div class="vl">${k.realizadas.toLocaleString('es-CL')}</div><div class="sb">Total del período</div></div></div>
+      <div class="k b"><div class="ic">📅</div><div><div class="lb">Entregas pendientes</div><div class="vl">${k.pendientes}</div><div class="sb">Por entregar</div></div></div>
+      <div class="k r"><div class="ic">⏰</div><div><div class="lb">Entregas atrasadas</div><div class="vl">${k.atrasadas}</div><div class="sb">Fuera del horario programado</div></div></div>
+      <div class="k a"><div class="ic">⚠️</div><div><div class="lb">Incidencias</div><div class="vl">${k.incidencias}</div><div class="sb">Con observaciones o daños</div></div></div>
+    </div>
+    <div class="filt">
+      <div class="ft">🔽 Filtros</div>
+      <div class="fg"><label>Desde</label><input type="date" id="hDesde" value="${H.fDesde}"></div>
+      <div class="fg"><label>Hasta</label><input type="date" id="hHasta" value="${H.fHasta}"></div>
+      <div class="fg"><label>Estado</label><select id="hEstado">
+        <option value="todos">Todos</option><option value="entregada">Entregada</option><option value="completada">Completada</option>
+        <option value="pendiente">Pendiente</option><option value="atrasada">Atrasada</option><option value="incidencia">Incidencia</option></select></div>
+      <div class="fg"><label>Sede</label><select><option>${escD((ME.sedes && (ME.sedes.find(s => s.id === SEDE) || {}).nombre) || 'Sede activa')}</option></select></div>
+      <div class="fg"><label>Responsable</label><select id="hResp"><option value="todos">Todos</option>${resp.map(x => `<option${x === H.fResp ? ' selected' : ''}>${escD(x)}</option>`).join('')}</select></div>
+      <a class="clr" id="hClr">↻ Limpiar filtros</a>
+    </div>
+    <div class="tbar">
+      <div class="srch"><input id="hQ" placeholder="Buscar en el historial (ID, alumno, reserva, equipo, asignatura…)" value="${escD(H.q)}"></div>
+      <button class="b" id="hExport">⬇️ Exportar</button>
+      <button class="b tl" id="hComp">🖨️ Descargar comprobante</button>
+    </div>
+    <div class="grid">
+      <div class="card"><div class="tw"><table>
+        <thead><tr><th>ID entrega</th><th>Alumno</th><th>Reserva</th><th>Equipos</th><th>Fecha programada</th><th>Fecha realizada</th><th>Responsable</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <tbody id="hBody"></tbody></table></div>
+        <div class="pag" id="hPag"></div>
+      </div>
+      <div id="hDetail"></div>
+    </div>`;
+  // Eventos de filtros
+  $('#hEstado').value = H.fEstado;
+  $('#hEstado').onchange = () => { H.fEstado = $('#hEstado').value; H.page = 1; renderHistBody(); };
+  $('#hResp').onchange = () => { H.fResp = $('#hResp').value; H.page = 1; renderHistBody(); };
+  $('#hDesde').onchange = () => { H.fDesde = $('#hDesde').value; H.page = 1; renderHistBody(); };
+  $('#hHasta').onchange = () => { H.fHasta = $('#hHasta').value; H.page = 1; renderHistBody(); };
+  $('#hQ').oninput = () => { H.q = $('#hQ').value; H.page = 1; renderHistBody(); };
+  $('#hClr').onclick = () => { H.fEstado = 'todos'; H.fResp = 'todos'; H.fDesde = ''; H.fHasta = ''; H.q = ''; H.page = 1; renderHist(); };
+  $('#hExport').onclick = exportHistCSV;
+  $('#hComp').onclick = () => { if (H.sel) comprobante(H.sel); else toast('Selecciona una entrega para su comprobante'); };
+  renderHistBody();
+  renderDetail();
+}
+
+function renderHistBody() {
+  const H = HIST; const lista = histFiltradas();
+  const total = lista.length, pp = H.perPage, pages = Math.max(1, Math.ceil(total / pp));
+  if (H.page > pages) H.page = pages;
+  const a = (H.page - 1) * pp, b = Math.min(total, a + pp);
+  const pageRows = lista.slice(a, b);
+  $('#hBody').innerHTML = pageRows.length ? pageRows.map(r => {
+    const [cls, ic, lbl] = ESTADOS[r.estado] || ['pend', '•', r.estado];
+    return `<tr data-cod="${escD(r.cod)}" class="${H.sel && H.sel.cod === r.cod ? 'sel' : ''}">
+      <td style="font-weight:700">${escD(r.cod)}</td>
+      <td class="al"><b>${escD(r.estudiante || '—')}</b><small>${escD(r.asignatura || r.categoria || '—')}</small></td>
+      <td>${r.reserva_cod ? `<span class="rz">${escD(r.reserva_cod)}</span>` : '—'}</td>
+      <td><div class="eq"><span class="ei">${icon(r.categoria || r.equipo)}</span><div><b style="font-weight:600">${escD(r.equipo || r.categoria || '—')}</b></div></div></td>
+      <td class="fdt">${fFechaDos(r.programada)}</td>
+      <td class="fdt">${fFechaDos(r.realizada)}</td>
       <td>${escD(r.panolero || '—')}</td>
-      <td><span class="pill ${dev ? 'ok' : (r.estado === 'atrasado' ? 'bad' : 'warn')}">${dev ? 'Devuelto' : (r.estado === 'atrasado' ? 'Atrasado' : 'En préstamo')}</span></td>
-      <td>${r.fecha_retorno ? fmtDate(r.fecha_retorno) : '—'}</td></tr>`; }).join('')
-  }</tbody></table>`;
+      <td><span class="pill ${cls}">${ic} ${lbl}</span></td>
+      <td><div class="acts"><button data-act="ver" title="Ver detalle">👁️</button><button data-act="comp" title="Comprobante">⬇️</button><button data-act="mas" title="Más">⋯</button></div></td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="9" class="muted" style="padding:22px;text-align:center;color:#94a3b8">No hay entregas que coincidan con los filtros.</td></tr>`;
+
+  // Paginación
+  const nums = []; const win = 2;
+  for (let p = 1; p <= pages; p++) { if (p === 1 || p === pages || Math.abs(p - H.page) <= win) nums.push(p); else if (nums[nums.length - 1] !== '…') nums.push('…'); }
+  $('#hPag').innerHTML = `<div class="mut">Mostrando ${total ? a + 1 : 0}–${b} de ${total.toLocaleString('es-CL')} entregas</div>
+    <div class="pg"><button ${H.page <= 1 ? 'disabled' : ''} data-pg="prev">← Anterior</button>
+    ${nums.map(n => n === '…' ? `<span class="mut" style="padding:0 4px">…</span>` : `<button data-pg="${n}" class="${n === H.page ? 'on' : ''}">${n}</button>`).join('')}
+    <button ${H.page >= pages ? 'disabled' : ''} data-pg="next">Siguiente →</button></div>
+    <div class="mut">Filas por página:
+      <select id="hPp" style="height:30px;border:1px solid #e6e9ef;border-radius:7px;margin-left:4px">${[8, 15, 25, 50].map(n => `<option${n === pp ? ' selected' : ''}>${n}</option>`).join('')}</select></div>`;
+
+  // Bindings de filas y acciones
+  $('#hBody').querySelectorAll('tr[data-cod]').forEach(tr => {
+    const r = lista.find(x => x.cod === tr.dataset.cod);
+    tr.onclick = (ev) => {
+      const act = ev.target.closest('button')?.dataset.act;
+      if (act === 'ver') return viewEntregaDetalle(r);
+      if (act === 'comp') return comprobante(r);
+      if (act === 'mas') return;
+      HIST.sel = r; renderHistBody(); renderDetail();
+    };
+  });
+  $('#hPag').querySelectorAll('button[data-pg]').forEach(b2 => b2.onclick = () => {
+    const v = b2.dataset.pg; if (v === 'prev') H.page--; else if (v === 'next') H.page++; else H.page = Number(v);
+    renderHistBody();
+  });
+  if ($('#hPp')) $('#hPp').onchange = () => { H.perPage = Number($('#hPp').value); H.page = 1; renderHistBody(); };
+}
+
+function renderDetail() {
+  const r = HIST.sel;
+  const el = $('#hDetail'); if (!el) return;
+  if (!r) { el.innerHTML = `<div class="dp"><div class="dh"><b>Detalle de entrega</b></div><div class="empty">Selecciona una entrega de la tabla para ver su detalle.</div></div>`; return; }
+  const [cls, ic, lbl] = ESTADOS[r.estado] || ['pend', '•', r.estado];
+  const sede = (ME.sedes && (ME.sedes.find(s => s.id === SEDE) || {}).nombre) || 'Sede activa';
+  const accionBtn = r.estado === 'pendiente' || r.estado === 'atrasada'
+    ? `<button class="btn tl" id="dReg">✔️ Registrar entrega</button>` : `<button class="btn tl" id="dVer">🔎 Ver detalle completo</button>`;
+  el.innerHTML = `<div class="dp">
+    <div class="dh"><b>Detalle de entrega</b><button class="x" id="dClose">×</button></div>
+    <div class="idrow"><span class="cod">${escD(r.cod)}</span><span class="pill ${cls}">${ic} ${lbl}</span></div>
+    ${r.reserva_cod ? `<div class="kv">Reserva: <span class="rz">${escD(r.reserva_cod)}</span></div>` : ''}
+    <div class="kv">Alumno: <b>${escD(r.estudiante || '—')}</b></div>
+    <div class="kv">Asignatura: <b>${escD(r.asignatura || r.categoria || '—')}</b></div>
+    <div class="kv">Sede: <b>${escD(sede)}</b></div>
+    <div class="sec">
+      <div class="kv">📅 Fecha programada: <b>${fFechaHora(r.programada)}</b></div>
+      <div class="kv">📅 Fecha realizada: <b>${fFechaHora(r.realizada)}</b></div>
+      <div class="kv">👤 Responsable: <b>${escD(r.panolero || '—')}</b></div>
+    </div>
+    <div class="sec">
+      <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:13px">🔧 Equipos (1)</b></div>
+      <div class="eqi"><span class="ei">${icon(r.categoria || r.equipo)}</span><div><b>${escD(r.equipo || r.categoria || '—')}</b><small>${r.n_serie ? 'SN: ' + escD(r.n_serie) : (r.modelo ? escD(r.modelo) : 'Por individualizar')}</small></div><span style="margin-left:auto;color:#64748b;font-size:12px">x1</span></div>
+    </div>
+    <div class="sec"><b style="font-size:13px">Observaciones</b><div class="obs" style="margin-top:6px">${escD(r.observacion || 'Sin observaciones.')}</div></div>
+    ${accionBtn}
+    <button class="btn gh" id="dComp">🖨️ Descargar comprobante</button>
+  </div>`;
+  $('#dClose').onclick = () => { HIST.sel = null; renderHistBody(); renderDetail(); };
+  $('#dComp').onclick = () => comprobante(r);
+  if ($('#dVer')) $('#dVer').onclick = () => viewEntregaDetalle(r);
+  if ($('#dReg')) $('#dReg').onclick = () => toast('La entrega se registra desde Entregas → Planificación y ejecución');
+}
+
+// ===== Detalle completo de una entrega (pantalla 2) =====
+function viewEntregaDetalle(r) {
+  const [cls, ic, lbl] = ESTADOS[r.estado] || ['pend', '•', r.estado];
+  const sede = (ME.sedes && (ME.sedes.find(s => s.id === SEDE) || {}).nombre) || 'Sede activa';
+  const completada = r.estado === 'completada';
+  const entregado = !!r.realizada;
+  const prog = r.programada, ent = r.realizada, dev = r.fecha_retorno;
+  // Duración total (entrega → devolución)
+  let durTxt = '—';
+  if (ent && dev) { const min = Math.max(0, Math.round((new Date(dev) - new Date(ent)) / 60000)); durTxt = Math.floor(min / 60) + ' h ' + (min % 60) + ' min'; }
+  const step = (ico, t, fecha, nota, done) => `<div class="st"><div class="c">${ico}${done ? '<span class="chk">✓</span>' : ''}</div><div class="t">${t}</div><div class="d">${fecha ? fFechaHora(fecha) : '—'}${nota ? '<br>' + nota : ''}</div></div>`;
+  const condDot = c => { const bad = c && ['dañado', 'danado', 'malo', 'perdido'].includes(String(c).toLowerCase()); const reg = c && String(c).toLowerCase() === 'regular'; const color = bad ? '#dc2626' : reg ? '#d97706' : '#16a34a'; const txt = c ? cap(String(c)) : 'En buen estado'; return `<span class="cond"><span class="dot" style="background:${color}"></span>${escD(txt)}</span>`; };
+  h(`<div class="hist"><style>${HIST_CSS}</style><div class="det">
+    <div class="dhead">
+      <div class="dtt"><div class="tk">📦</div><div><h1>Entrega ${escD(r.cod)}</h1><p>Préstamo de equipamiento académico</p></div>
+        <span class="pill ${cls}" style="margin-left:6px">${ic} ${lbl}</span></div>
+      <div class="dbtns"><button class="b" id="dBack">← Volver al historial</button><button class="b" id="dComp2">⬇️ Descargar comprobante</button>${entregado ? '<button class="b tl" id="dRep">🔁 Repetir entrega</button>' : ''}</div>
+    </div>
+    <div class="stp">
+      ${step('📅', 'Reserva', prog, r.reserva_cod || '', !!r.reserva_cod)}
+      <div class="ln"></div>
+      ${step('📦', 'Preparación', prog, 'Equipos preparados', entregado)}
+      <div class="ln"></div>
+      ${step('🤝', 'Entrega', ent, entregado ? escD(r.cod) : 'Pendiente', entregado)}
+      <div class="ln"></div>
+      ${step('🏁', 'Cierre', dev, completada ? 'Devolución y cierre' : 'En curso', completada)}
+    </div>
+    <div class="cols">
+      <div class="ic2"><div class="hd">👤 Alumno</div><div class="big">${escD(r.estudiante || '—')}</div><small>RUT: ${escD(r.rut || '—')}</small><small>${escD(r.email || '—')}</small></div>
+      <div class="ic2"><div class="hd">📘 Asignatura</div><div class="big">${escD(r.asignatura || r.categoria || '—')}</div><small>Equipo: ${escD(r.equipo || '—')}</small></div>
+      <div class="ic2"><div class="hd">📍 Contexto de la entrega</div><div class="ln2">📍 Sede<br><b>${escD(sede)}</b></div><div class="ln2">👤 Responsable<br><b>${escD(r.panolero || '—')}</b></div></div>
+      <div class="ic2"><div class="hd">🕒 Fechas y horarios</div><div class="ln2">Programada: <b>${fFechaHora(prog)}</b></div><div class="ln2">Real (entrega): <b>${fFechaHora(ent)}</b></div><div class="ln2">Real (devolución): <b>${fFechaHora(dev)}</b></div><div class="ln2">Duración total: <b>${durTxt}</b></div></div>
+    </div>
+    <div class="main2">
+      <div>
+        <div class="box"><h3>📦 Equipos entregados (1)</h3>
+          <div class="tw"><table class="eq2"><thead><tr><th>#</th><th>Equipo / Accesorio</th><th>Modelo</th><th>N° de serie</th><th>Cantidad</th><th>Condición al entregar</th></tr></thead>
+          <tbody><tr><td>1</td><td>${escD(r.equipo || r.categoria || '—')}</td><td>${escD(r.modelo || '—')}</td><td>${escD(r.n_serie || r.codigo_qr || '—')}</td><td>1</td><td>${condDot(r.condicion_salida)}</td></tr></tbody></table></div>
+        </div>
+        <div class="box"><h3>🧾 Resumen</h3><div class="rsum">
+          <div class="rc"><div class="ri" style="background:#eef4fe;color:#2563eb">📦</div><div><b>1</b><small>Total de equipos</small></div></div>
+          <div class="rc"><div class="ri" style="background:#eef2f7">📅</div><div><b>${durTxt}</b><small>Duración del préstamo</small></div></div>
+          <div class="rc"><div class="ri" style="background:#eefaf2;color:#15803d">✅</div><div><b>${lbl}</b><small>Estado final</small></div></div>
+        </div></div>
+      </div>
+      <div>
+        <div class="box"><h3>✍️ Confirmación / Firma digital</h3>
+          ${entregado ? `<div class="sign">✔️ <div><b>Entrega confirmada</b><br>Registrada el ${fFechaHora(ent)}</div></div>
+          <div class="sg"><span class="nm">${escD((r.estudiante || '').split(' ').slice(0, 2).join(' '))}</span><span style="color:#15803d;font-size:12px;font-weight:700">✔️ Firma válida</span></div>`
+          : `<div class="obs" style="background:#f8fafc;border:1px solid #eef1f5;border-radius:9px;padding:11px;color:#64748b;font-size:12.5px">Entrega pendiente de confirmación.</div>`}
+        </div>
+        <div class="box"><h3>💬 Observaciones</h3><p style="font-size:12.5px;color:#64748b;margin:0">${escD(r.observacion || 'Sin observaciones registradas.')}</p></div>
+        <div class="box"><h3>⚠️ Incidencias</h3><div class="inc ${r.incidencia ? 'bad' : ''}">${r.incidencia ? '⚠️ Entrega con observaciones o daños registrados.' : '✔️ Sin incidencias registradas.'}</div></div>
+      </div>
+    </div>
+  </div></div>`);
+  $('#dBack').onclick = viewHistorialEntregas;
+  $('#dComp2').onclick = () => comprobante(r);
+  if ($('#dRep')) $('#dRep').onclick = () => toast('Repetir entrega: crea una nueva reserva con el mismo equipamiento');
+}
+
+// Comprobante imprimible de una entrega
+function comprobante(r) {
+  const sede = (ME.sedes && (ME.sedes.find(s => s.id === SEDE) || {}).nombre) || 'Sede activa';
+  const [, , lbl] = ESTADOS[r.estado] || ['', '', r.estado];
+  const linea = (k, v) => `<tr><td style="color:#64748b;padding:4px 10px 4px 0">${k}</td><td style="font-weight:600">${v || '—'}</td></tr>`;
+  const w = window.open('', '_blank');
+  const body = `<h1 style="font-size:18px;margin:0 0 2px">Comprobante de entrega ${escD(r.cod)}</h1>
+    <div style="color:#64748b;font-size:12px;margin-bottom:14px">Pañol Online · ${escD(sede)} · ${new Date().toLocaleString('es-CL')}</div>
+    <table style="font-size:13px;border-collapse:collapse">
+      ${linea('Reserva', r.reserva_cod)}${linea('Alumno', escD(r.estudiante))}${linea('RUT', escD(r.rut))}
+      ${linea('Asignatura', escD(r.asignatura || r.categoria))}${linea('Equipo', escD(r.equipo))}${linea('N° de serie', escD(r.n_serie || r.codigo_qr))}
+      ${linea('Fecha programada', fFechaHora(r.programada))}${linea('Fecha de entrega', fFechaHora(r.realizada))}${linea('Fecha de devolución', fFechaHora(r.fecha_retorno))}
+      ${linea('Responsable', escD(r.panolero))}${linea('Estado', lbl)}</table>
+    <p style="margin-top:28px;font-size:12px;color:#64748b">Firma del estudiante: ____________________________</p>`;
+  if (w) { w.document.write(`<html><head><title>Comprobante ${escD(r.cod)}</title><meta charset="utf8"><style>body{font-family:system-ui,Arial;margin:28px;color:#0f172a}td{vertical-align:top}</style></head><body>${body}</body></html>`); w.document.close(); w.focus(); setTimeout(() => { try { w.print(); } catch (e) {} }, 300); }
+  else toast('Permite las ventanas emergentes para imprimir el comprobante');
+}
+
+// Exportar historial filtrado a CSV
+function exportHistCSV() {
+  const lista = histFiltradas();
+  if (!lista.length) return toast('No hay filas para exportar');
+  const esc = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const head = ['ID', 'Reserva', 'Alumno', 'RUT', 'Asignatura', 'Equipo', 'N° serie', 'Fecha programada', 'Fecha realizada', 'Devolución', 'Responsable', 'Estado'];
+  const linf = r => [r.cod, r.reserva_cod, r.estudiante, r.rut, r.asignatura || r.categoria, r.equipo, r.n_serie || r.codigo_qr, fFechaHora(r.programada), fFechaHora(r.realizada), fFechaHora(r.fecha_retorno), r.panolero, (ESTADOS[r.estado] || ['', '', r.estado])[2]];
+  const csv = '﻿' + [head.map(esc).join(','), ...lista.map(r => linf(r).map(esc).join(','))].join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob); const a = document.createElement('a');
+  a.href = url; a.download = 'historial_entregas.csv'; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 500);
+  toast('Historial exportado (' + lista.length + ' filas)');
 }
 async function viewAgenda() {
   h(`<h2 class="page">Agenda de entregas</h2><div id="list"></div>`);

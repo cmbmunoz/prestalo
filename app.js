@@ -784,15 +784,87 @@ app.get('/api/panol/dashboard', auth, requireRole(...OPERACION), wrap(async (req
 
 // Historial de entregas (préstamos) de la sede.
 app.get('/api/entregas/historial', auth, requireRole(...OPERACION), wrap(async (req, res) => {
-  const { rows } = await db.query(
-    `SELECT p.id, p.fecha_salida, p.fecha_retorno, p.estado, p.condicion_salida, p.condicion_retorno,
-            u.nombre AS estudiante, u.rut, e.nombre AS equipo, c.nombre AS categoria,
-            pa.nombre AS panolero
-     FROM prestamo p JOIN usuario u ON u.rut=p.usuario_rut
-     JOIN equipo e ON e.id=p.equipo_id JOIN categoria c ON c.id=e.categoria_id
-     LEFT JOIN usuario pa ON pa.rut=p.panolero_rut
-     WHERE e.entidad_id=$1 ORDER BY p.fecha_salida DESC LIMIT 200`, [req.sede]);
-  res.json(rows);
+  const sede = req.sede;
+  // Entregas realizadas (préstamos). Intenta traer asignatura (reserva→tarea); si
+  // faltan columnas/tablas de esas migraciones, cae a la consulta base.
+  const qReal = (withAsig) => `
+    SELECT p.id, p.reserva_id, p.fecha_salida, p.fecha_retorno, p.estado,
+           p.condicion_salida, p.condicion_retorno, p.requiere_reposicion, p.observacion,
+           r.fecha_inicio AS programada, r.fecha_fin AS prog_retorno,
+           u.nombre AS estudiante, u.rut, u.email,
+           e.nombre AS equipo, e.marca, e.modelo, e.n_serie, e.codigo_qr, c.nombre AS categoria,
+           pa.nombre AS panolero${withAsig ? ', ta.nombre AS asignatura' : ''}
+    FROM prestamo p
+    JOIN usuario u ON u.rut=p.usuario_rut
+    JOIN equipo e ON e.id=p.equipo_id
+    JOIN categoria c ON c.id=e.categoria_id
+    LEFT JOIN usuario pa ON pa.rut=p.panolero_rut
+    LEFT JOIN reserva r ON r.id=p.reserva_id
+    ${withAsig ? 'LEFT JOIN tarea t ON t.id=r.tarea_id LEFT JOIN asignatura ta ON ta.id=t.asignatura_id' : ''}
+    WHERE e.entidad_id=$1 ORDER BY p.fecha_salida DESC LIMIT 400`;
+  let real;
+  try { real = (await db.query(qReal(true), [sede])).rows; }
+  catch (e) { if (['42703', '42P01'].includes(e.code)) real = (await db.query(qReal(false), [sede])).rows; else throw e; }
+
+  // Entregas pendientes: reservas confirmadas aún sin préstamo (por entregar).
+  const qPend = (withAsig) => `
+    SELECT r.id AS reserva_id, r.fecha_inicio AS programada, r.fecha_fin AS prog_retorno,
+           u.nombre AS estudiante, u.rut, u.email,
+           COALESCE(e.nombre, cr.nombre) AS equipo, e.marca, e.modelo, e.n_serie, e.codigo_qr,
+           COALESCE(ce.nombre, cr.nombre) AS categoria${withAsig ? ', ta.nombre AS asignatura' : ''}
+    FROM reserva r
+    JOIN usuario u ON u.rut=r.usuario_rut
+    LEFT JOIN equipo e ON e.id=r.equipo_id
+    LEFT JOIN categoria ce ON ce.id=e.categoria_id
+    LEFT JOIN categoria cr ON cr.id=r.categoria_id
+    ${withAsig ? 'LEFT JOIN tarea t ON t.id=r.tarea_id LEFT JOIN asignatura ta ON ta.id=t.asignatura_id' : ''}
+    WHERE r.estado='confirmada' AND COALESCE(e.entidad_id,u.entidad_id)=$1
+      AND NOT EXISTS (SELECT 1 FROM prestamo p WHERE p.reserva_id=r.id)
+    ORDER BY r.fecha_inicio DESC LIMIT 200`;
+  let pend = [];
+  try { pend = (await db.query(qPend(true), [sede])).rows; }
+  catch (e) { if (['42703', '42P01'].includes(e.code)) { try { pend = (await db.query(qPend(false), [sede])).rows; } catch (_) { pend = []; } } else if (e.code === '42P01') pend = []; else throw e; }
+
+  const nowMs = Date.now();
+  const danado = c => c && ['dañado', 'danado', 'malo', 'perdido', 'regular'].includes(String(c).toLowerCase());
+  const rows = [];
+  for (const p of real) {
+    const incidencia = p.requiere_reposicion || danado(p.condicion_retorno);
+    const estado = incidencia ? 'incidencia'
+      : p.estado === 'devuelto' ? 'completada'
+      : p.estado === 'atrasado' ? 'atrasada'
+      : 'entregada';
+    rows.push({
+      id: p.id, cod: 'E-' + String(p.id).padStart(6, '0'),
+      reserva_id: p.reserva_id, reserva_cod: p.reserva_id ? 'R-' + String(p.reserva_id).padStart(5, '0') : null,
+      estudiante: p.estudiante, rut: p.rut, email: p.email, asignatura: p.asignatura || null,
+      equipo: p.equipo, marca: p.marca, modelo: p.modelo, n_serie: p.n_serie, codigo_qr: p.codigo_qr, categoria: p.categoria,
+      programada: p.programada || p.fecha_salida, realizada: p.fecha_salida, fecha_retorno: p.fecha_retorno, prog_retorno: p.prog_retorno,
+      panolero: p.panolero, condicion_salida: p.condicion_salida, condicion_retorno: p.condicion_retorno,
+      incidencia, observacion: p.observacion, estado
+    });
+  }
+  for (const r of pend) {
+    const atrasada = r.programada && new Date(r.programada).getTime() < nowMs;
+    rows.push({
+      id: null, cod: 'R-' + String(r.reserva_id).padStart(5, '0'),
+      reserva_id: r.reserva_id, reserva_cod: 'R-' + String(r.reserva_id).padStart(5, '0'),
+      estudiante: r.estudiante, rut: r.rut, email: r.email, asignatura: r.asignatura || null,
+      equipo: r.equipo, marca: r.marca, modelo: r.modelo, n_serie: r.n_serie, codigo_qr: r.codigo_qr, categoria: r.categoria,
+      programada: r.programada, realizada: null, fecha_retorno: null, prog_retorno: r.prog_retorno,
+      panolero: null, condicion_salida: null, condicion_retorno: null,
+      incidencia: false, observacion: null, estado: atrasada ? 'atrasada' : 'pendiente'
+    });
+  }
+  rows.sort((a, b) => new Date(b.programada || 0) - new Date(a.programada || 0));
+
+  const kpis = {
+    realizadas: real.length,
+    pendientes: pend.length,
+    atrasadas: rows.filter(x => x.estado === 'atrasada').length,
+    incidencias: rows.filter(x => x.incidencia).length
+  };
+  res.json({ rows, kpis });
 }));
 
 app.get('/api/por-recibir', auth, requireRole(...OPERACION), wrap(async (req, res) => {
