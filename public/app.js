@@ -252,9 +252,10 @@ function stopDashPoll() { if (DASH_POLL) { clearInterval(DASH_POLL); DASH_POLL =
 function h(html) { stopDashPoll(); DASHVIEW = { fn: null }; view().innerHTML = html; }
 // Recarga la vista operativa activa (Control de Inventario / Planificación) preservando
 // su estado; si no hay una activa, usa el fallback. Se llama tras entregar/recibir.
+// silent=true → actualiza en el lugar sin mostrar "Cargando…" ni parpadeo.
 function reloadDash(fallback) {
-  if (DASHVIEW.fn === 'ep') return viewEntregasPlan(DASHVIEW.rango, DASHVIEW.ref, { keepId: DASHVIEW.keepId, filtro: DASHVIEW.filtro });
-  if (DASHVIEW.fn === 'inv') return viewInventarioDash(DASHVIEW.rango, DASHVIEW.modo, DASHVIEW.ref);
+  if (DASHVIEW.fn === 'ep') return viewEntregasPlan(DASHVIEW.rango, DASHVIEW.ref, { keepId: DASHVIEW.keepId, filtro: DASHVIEW.filtro }, { silent: true });
+  if (DASHVIEW.fn === 'inv') return viewInventarioDash(DASHVIEW.rango, DASHVIEW.modo, DASHVIEW.ref, { silent: true });
   return fallback ? fallback() : null;
 }
 // ¿El usuario está interactuando? (modal abierto o campo con foco) → no auto-refrescar ahora.
@@ -262,6 +263,33 @@ function dashBusy() {
   if (document.querySelector('.modal, .modal-bg, #modal')) return true;
   const a = document.activeElement;
   return !!(a && ['INPUT', 'SELECT', 'TEXTAREA'].includes(a.tagName));
+}
+// Firma compacta del estado operativo: cambia sólo cuando hay un cambio real
+// (nuevas reservas, cambios de estado, individualización). Evita re-render inútil.
+function dashSig(d) {
+  try {
+    return JSON.stringify([
+      d.rango, d.reservas_pendientes, d.entregas_hoy, d.devoluciones_hoy, d.alertas_stock,
+      (d.entregas || []).map(x => [x.id, x.fecha_inicio, x.fecha_fin, x.por_individualizar ? 1 : 0, (x.unidades || []).length]),
+      (d.devoluciones || []).map(x => x.id)
+    ]);
+  } catch (e) { return String(Math.random()); }
+}
+// Auto-refresh online y silencioso: consulta cada 20s; sólo reemplaza el contenido
+// cuando la firma cambió, y nunca mientras el usuario interactúa.
+function startDashPoll(kind) {
+  stopDashPoll();
+  DASH_POLL = setInterval(async () => {
+    const sel = kind === 'inv' ? '#invDash' : '#epRoot';
+    if (!$(sel)) { stopDashPoll(); return; }
+    if (dashBusy()) return;
+    let d2;
+    try { d2 = await api('/panol/dashboard?rango=' + DASHVIEW.rango + (DASHVIEW.ref ? '&ref=' + DASHVIEW.ref : '')); } catch (e) { return; }
+    if (!$(sel) || dashBusy()) return;
+    if (dashSig(d2) === DASHVIEW.sig) return;              // nada cambió → no tocar el DOM
+    if (kind === 'inv') viewInventarioDash(DASHVIEW.rango, DASHVIEW.modo, DASHVIEW.ref, { silent: true, data: d2 });
+    else viewEntregasPlan(DASHVIEW.rango, DASHVIEW.ref, { keepId: DASHVIEW.keepId, filtro: DASHVIEW.filtro }, { silent: true, data: d2 });
+  }, 20000);
 }
 
 async function render(key) {
@@ -495,10 +523,13 @@ function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
 function fmtFechaLarga(d) {
   try { return 'Hoy, ' + d.toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' }); } catch (e) { return ''; }
 }
-async function viewInventarioDash(rango = 'hoy', modo = 'programadas', ref = null) {
-  h(`<div class="invd"><style>${INVDASH_CSS}</style><div id="invDash">Cargando…</div></div>`);
-  let d;
-  try { d = await api('/panol/dashboard?rango=' + rango + (ref ? '&ref=' + ref : '')); } catch (e) { $('#invDash').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
+async function viewInventarioDash(rango = 'hoy', modo = 'programadas', ref = null, opts = {}) {
+  const silent = !!opts.silent;
+  const prevSrch = silent && $('#tSrch') ? $('#tSrch').value : '';
+  if (!silent) h(`<div class="invd"><style>${INVDASH_CSS}</style><div id="invDash">Cargando…</div></div>`);
+  let d = opts.data;
+  if (!d) { try { d = await api('/panol/dashboard?rango=' + rango + (ref ? '&ref=' + ref : '')); } catch (e) { if (!silent && $('#invDash')) $('#invDash').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; } }
+  if (!$('#invDash')) return;
   const rangoLabel = { hoy: 'Hoy', semana: 'Esta semana', mes: 'Este mes' };
   // Fecha base: la elegida en el calendario (ref) o hoy.
   const baseD = ref ? new Date(ref + 'T12:00:00') : new Date();
@@ -663,14 +694,12 @@ async function viewInventarioDash(rango = 'hoy', modo = 'programadas', ref = nul
   $('#tSrch').oninput = renderTabla;
   $('#fClear').onclick = () => { modo = 'programadas'; DASHVIEW.modo = modo; $('#fModo').value = 'programadas'; $('#tSrch').value = ''; $('#invDash').querySelectorAll('.kpi').forEach(k => k.classList.remove('sel')); renderTabla(); };
   $('#fModo').value = modo;
+  if (silent && prevSrch && $('#tSrch')) $('#tSrch').value = prevSrch;
   renderTabla();
 
-  // Panel activo + actualización automática/online de los cambios de estado.
-  if ($('#invDash')) {
-    DASHVIEW = { fn: 'inv', rango, modo, ref };
-    stopDashPoll();
-    DASH_POLL = setInterval(() => { if (!$('#invDash')) { stopDashPoll(); return; } if (!dashBusy()) viewInventarioDash(DASHVIEW.rango, DASHVIEW.modo, DASHVIEW.ref); }, 20000);
-  }
+  // Panel activo + actualización automática/online (silenciosa) de los cambios de estado.
+  DASHVIEW = { fn: 'inv', rango, modo, ref, sig: dashSig(d) };
+  startDashPoll('inv');
 }
 
 // ===================== Planificación y Ejecución de Entregas (maqueta) =====================
@@ -742,12 +771,50 @@ const ENTP_CSS = `
 .entp .plan .ro .sl{font-weight:800;color:#2563eb;font-size:13px;width:54px;flex:0 0 auto}
 .entp .plan .ro .bd b{font-size:12.5px}.entp .plan .ro .bd small{display:block;color:#6b7280;font-size:11px}
 .entp .plan .ro .tag{margin-left:auto;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:#fff5e6;color:#b45309}
+.entp .modbtns{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.entp .modbtns button{flex:1;min-width:120px;border:1px solid #d7dce3;background:#fff;border-radius:9px;padding:9px;font-size:12.5px;font-weight:700;cursor:pointer;color:#374151}
+.entp .modbtns button.pri{background:#2563eb;border-color:#2563eb;color:#fff}
+/* Grilla de la semana (como Control de Inventario, pantalla adjunta) */
+.entp .wkgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.entp .wkcell{border:1px solid #eef1f5;border-radius:10px;padding:10px 3px;text-align:center;background:#f9fafb;cursor:pointer}
+.entp .wkcell.has{background:#eef4ff;border-color:#cfe0ff}
+.entp .wkcell.today{outline:2px solid #2563eb;outline-offset:-1px}
+.entp .wkcell .wd{font-size:10px;color:#6b7280;text-transform:uppercase}
+.entp .wkcell .wn{font-size:17px;font-weight:800;color:#111827;margin:1px 0}
+.entp .wkcell .wb{font-size:10px;font-weight:700;color:#2563eb;min-height:12px}
+/* Mes por semanas (como Control de Inventario, pantalla adjunta) */
+.entp .mwk{display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid #eef1f5;border-radius:10px;padding:12px;margin:6px 0;background:#f9fafb;cursor:pointer}
+.entp .mwk.has{background:#eef4ff;border-color:#cfe0ff}
+.entp .mwk.cur{outline:2px solid #2563eb;outline-offset:-1px}
+.entp .mwk .ml{font-size:12.5px;color:#374151;font-weight:600}
+.entp .mwk .mn{font-size:12px;font-weight:700;color:#2563eb;white-space:nowrap}
+/* Lista del día coloreada por urgencia (verde lejos / amarillo ≤4h / rojo ≤2h) */
+.entp .daylist{max-height:600px;overflow:auto}
+.entp .dgh{font-weight:700;font-size:12.5px;color:#374151;margin:4px 2px 8px}
+.entp .drow{display:flex;gap:10px;align-items:center;padding:9px 11px;border:1px solid #eef1f5;border-radius:10px;margin-bottom:7px;background:#fff;cursor:pointer;border-left-width:5px;border-left-style:solid}
+.entp .drow.sel{outline:2px solid #2563eb;outline-offset:1px}
+.entp .drow.u-verde{border-left-color:#22c55e}
+.entp .drow.u-amar{border-left-color:#f59e0b}
+.entp .drow.u-rojo{border-left-color:#ef4444}
+.entp .drow .hh{font-weight:800;font-size:13px;width:70px;flex:0 0 auto}
+.entp .drow.u-verde .hh{color:#16a34a}.entp .drow.u-amar .hh{color:#b45309}.entp .drow.u-rojo .hh{color:#dc2626}
+.entp .drow .bd b{font-size:13px}.entp .drow .bd small{display:block;color:#6b7280;font-size:11.5px}
+.entp .drow .ub{margin-left:auto;font-size:10px;font-weight:800;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.entp .drow.u-verde .ub{background:#eafaf0;color:#16a34a}
+.entp .drow.u-amar .ub{background:#fff7e6;color:#b45309}
+.entp .drow.u-rojo .ub{background:#fdeeee;color:#dc2626}
+.entp .ulegend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:#6b7280;margin:2px 2px 10px}
+.entp .ulegend span{display:inline-flex;align-items:center;gap:5px}
+.entp .ulegend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+@media print{body *{visibility:hidden}#printArea,#printArea *{visibility:visible}#printArea{position:absolute;left:0;top:0;width:100%}}
 `;
-function viewEntregasPlan(rango = 'hoy', ref = null, keep = null) {
-  h(`<div class="entp"><style>${ENTP_CSS}</style><div id="epRoot">Cargando…</div></div>`);
+function viewEntregasPlan(rango = 'hoy', ref = null, keep = null, opts = {}) {
+  const silent = !!opts.silent;
+  if (!silent) h(`<div class="entp"><style>${ENTP_CSS}</style><div id="epRoot">Cargando…</div></div>`);
   (async () => {
-    let d;
-    try { d = await api('/panol/dashboard?rango=' + rango + (ref ? '&ref=' + ref : '')); } catch (e) { $('#epRoot').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
+    let d = opts.data;
+    if (!d) { try { d = await api('/panol/dashboard?rango=' + rango + (ref ? '&ref=' + ref : '')); } catch (e) { if (!silent && $('#epRoot')) $('#epRoot').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; } }
+    if (!$('#epRoot')) return;
     const E = d.entregas;
     const rangoLabel = { hoy: 'hoy', semana: 'esta semana', mes: 'este mes' };
     const now = new Date(); const nowMs = now.getTime();
@@ -782,38 +849,56 @@ function viewEntregasPlan(rango = 'hoy', ref = null, keep = null) {
     let sel = (keep && keep.keepId != null) ? E.findIndex(e => e.id === keep.keepId) : (E.length ? 0 : -1);
     if (sel < 0 && E.length && !(keep && keep.keepId != null)) sel = 0;
 
-    // ===== Timeline vertical 08–19 (vista Día) =====
-    const AX0 = 8, AX1 = 19, SPAN = AX1 - AX0, H = 560;
-    const topPx = t => { const dt = new Date(t); const hh = dt.getHours() + dt.getMinutes() / 60; return Math.max(0, Math.min(H, (hh - AX0) / SPAN * H)); };
-    const colores = ['#3b82f6', '#8b5cf6', '#22c55e', '#06b6d4', '#ef4444', '#f59e0b'];
-    const hrsLines = []; for (let hgt = AX0; hgt <= AX1; hgt++) { const y = (hgt - AX0) / SPAN * H; hrsLines.push(`<div class="hr" style="top:${y}px">${('0' + hgt).slice(-2)}:00</div>`); }
+    // ===== Urgencia por cercanía a la hora actual (vista Día) =====
+    // Verde = lejos; amarillo = dentro de 4 h; rojo = dentro de 2 h o atrasada.
+    const urgencia = e => {
+      const diffH = (new Date(e.fecha_inicio).getTime() - nowMs) / 3600000;
+      if (diffH <= 2) return { cls: 'u-rojo', lbl: diffH < 0 ? 'Atrasada' : 'Urgente · ≤ 2 h' };
+      if (diffH <= 4) return { cls: 'u-amar', lbl: 'Pronto · ≤ 4 h' };
+      return { cls: 'u-verde', lbl: 'A tiempo' };
+    };
 
-    const evHtml = () => idxVis().map(i => {
-      const e = E[i];
-      const top = topPx(e.fecha_inicio);
-      const dur = Math.max(0.6, (new Date(e.fecha_fin || e.fecha_inicio) - new Date(e.fecha_inicio)) / 3600000);
-      const hgt = Math.max(42, dur / SPAN * H);
-      const [elab] = estadoDe(e);
-      return `<div class="ev ${i === sel ? 'sel' : ''}" data-i="${i}" style="top:${top}px;height:${hgt}px;background:${colores[i % colores.length]}">
-        <div class="t1"><span>${RES(e.id)} · Entrega</span><span>${fmtHora(e.fecha_inicio)} – ${fmtHora(e.fecha_fin || e.fecha_inicio)}</span></div>
-        <div class="t2">${escD(e.item)} (x1)</div>
-        <span class="bg">${elab}</span></div>`;
-    }).join('');
-    const esHoyBase = !ref || ref === isoDay(new Date());
-    const nowLine = (() => { if (!esHoyBase) return ''; const nh = now.getHours() + now.getMinutes() / 60; if (nh < AX0 || nh > AX1) return ''; return `<div class="nowl" style="top:${topPx(now)}px"><span class="lb">Ahora ${fmtHora(now)}</span></div>`; })();
-    const vtHtml = () => `<div class="vt">${hrsLines.join('')}${evHtml()}${nowLine}</div>`;
-    // Vista Semana / Mes: lista agrupada por día (con fecha).
-    const listHtml = () => {
+    // Vista DÍA: lista agrupada por día, coloreada por urgencia (como la pantalla adjunta).
+    const dayListHtml = () => {
       const vis = idxVis();
-      if (!vis.length) return '<p class="muted" style="font-size:12.5px;padding:8px">No hay entregas para ' + rangoLabel[rango] + (filtro ? ' con ese filtro' : '') + '.</p>';
+      if (!vis.length) return '<p class="muted" style="font-size:12.5px;padding:8px">No hay entregas para este día' + (filtro ? ' con ese filtro' : '') + '.</p>';
       const grupos = {};
       vis.forEach(i => { const e = E[i]; const k = new Date(e.fecha_inicio).toLocaleDateString('es-CL', { weekday: 'long', day: '2-digit', month: 'short' }); (grupos[k] = grupos[k] || []).push(i); });
-      return '<div style="max-height:600px;overflow:auto">' + Object.keys(grupos).map(k => `<div style="margin-bottom:6px">
-        <div style="font-weight:700;font-size:12.5px;color:#374151;margin:8px 2px 4px">${cap(k)}</div>
-        ${grupos[k].map(i => { const e = E[i]; const [elab, ecls] = estadoDe(e); return `<div class="nextit lstit" data-i="${i}" style="border-left:4px solid ${colores[i % colores.length]};padding-left:8px;${i === sel ? 'background:#eef4ff' : ''}">
-          <div class="hr">${fmtHora(e.fecha_inicio)}</div><div class="bd"><b>${RES(e.id)}</b><small>${escD(e.item)} · ${escD(e.estudiante)}</small></div>
-          <span class="badge ${ecls}">${elab}</span></div>`; }).join('')}</div>`).join('') + '</div>';
+      const leg = `<div class="ulegend"><span><i style="background:#22c55e"></i>A tiempo</span><span><i style="background:#f59e0b"></i>≤ 4 h</span><span><i style="background:#ef4444"></i>≤ 2 h / atrasada</span></div>`;
+      return leg + '<div class="daylist">' + Object.keys(grupos).map(k => `<div class="dgh">${cap(k)}</div>` +
+        grupos[k].map(i => { const e = E[i]; const u = urgencia(e); return `<div class="drow ${u.cls} ${i === sel ? 'sel' : ''}" data-i="${i}">
+          <div class="hh">🕐 ${fmtHora(e.fecha_inicio)}</div>
+          <div class="bd"><b>${RES(e.id)}</b><small>${escD(e.item)} · ${escD(e.estudiante)}${e.por_individualizar ? ' · por asignar unidad' : ''}</small></div>
+          <span class="ub">${u.lbl}</span></div>`; }).join('')).join('') + '</div>';
     };
+
+    // Vista SEMANA: grilla de 7 días desde la fecha base (clic → ver ese día).
+    const weekGridHtml = () => {
+      const l0 = new Date(baseD); l0.setHours(0, 0, 0, 0);
+      const porDia = {}; E.forEach(e => { const k = isoDay(new Date(e.fecha_inicio)); porDia[k] = (porDia[k] || 0) + 1; });
+      const hoyISO = isoDay(new Date());
+      let cells = '';
+      for (let i = 0; i < 7; i++) { const x = new Date(l0); x.setDate(l0.getDate() + i); const k = isoDay(x); const n = porDia[k] || 0;
+        cells += `<div class="wkcell ${n ? 'has' : ''} ${k === hoyISO ? 'today' : ''}" data-day="${k}">
+          <div class="wd">${x.toLocaleDateString('es-CL', { weekday: 'short' }).replace('.', '')}</div>
+          <div class="wn">${x.getDate()}</div><div class="wb">${n ? n + '📦' : ''}</div></div>`; }
+      return `<div class="wkgrid">${cells}</div><p class="muted" style="font-size:11px;margin:10px 2px 0">Toca un día para ver sus entregas.</p>`;
+    };
+
+    // Vista MES: semanas que parten el día 1 (clic → ver esa semana por días).
+    const monthWeeksHtml = () => {
+      const y = baseD.getFullYear(), m = baseD.getMonth(); const ult = new Date(y, m + 1, 0).getDate(); const hoyISO = isoDay(new Date());
+      let rows = '';
+      for (let start = 1; start <= ult; start += 7) { const end = Math.min(start + 6, ult);
+        const ini = new Date(y, m, start), fin = new Date(y, m, end);
+        const n = E.filter(e => { const dd = new Date(e.fecha_inicio); return dd >= new Date(y, m, start, 0, 0, 0) && dd <= new Date(y, m, end, 23, 59, 59); }).length;
+        const cur = (hoyISO >= isoDay(ini) && hoyISO <= isoDay(fin)); const mes = ini.toLocaleDateString('es-CL', { month: 'short' }).replace('.', '');
+        rows += `<div class="mwk ${n ? 'has' : ''} ${cur ? 'cur' : ''}" data-week="${isoDay(ini)}">
+          <span class="ml">Desde ${start} ${mes} · ${start}–${end}</span><span class="mn">${n} entrega${n === 1 ? '' : 's'}</span></div>`; }
+      return rows + `<p class="muted" style="font-size:11px;margin:10px 2px 0">Toca una semana para verla por días.</p>`;
+    };
+
+    const centerHtml = () => rango === 'hoy' ? dayListHtml() : rango === 'semana' ? weekGridHtml() : monthWeeksHtml();
 
     const nextHtml = () => { const vis = idxVis(); return vis.length ? vis.map(i => {
       const e = E[i]; const [elab, ecls] = estadoDe(e);
@@ -852,7 +937,7 @@ function viewEntregasPlan(rango = 'hoy', ref = null, keep = null) {
             <div class="caltop"><div class="seg"><button data-r="hoy" class="${rango === 'hoy' ? 'on' : ''}">Día</button><button data-r="semana" class="${rango === 'semana' ? 'on' : ''}">Semana</button><button data-r="mes" class="${rango === 'mes' ? 'on' : ''}">Mes</button></div>
               <div class="nav"><button id="epPrev">‹</button>📅 ${navLbl}<button id="epNext2">›</button>
                 ${rango === 'hoy' ? '' : `<input type="date" class="refpick" id="epRef" value="${isoDay(baseD)}" title="Elegir ${rango === 'semana' ? 'la semana' : 'el mes'}">`}</div></div>
-            <div id="epCenter">${rango === 'hoy' ? vtHtml() : listHtml()}</div>
+            <div id="epCenter">${centerHtml()}</div>
           </div>
           <div class="chips">
             <div class="chip"><div class="v">${E.length}</div><div class="l">🚚 Programadas ${rangoLabel[rango]}</div></div>
@@ -871,37 +956,51 @@ function viewEntregasPlan(rango = 'hoy', ref = null, keep = null) {
       const ord = E.map((e, i) => ({ e, i })).sort((a, b) => new Date(a.e.fecha_inicio) - new Date(b.e.fecha_inicio));
       const porDia = {};
       ord.forEach(({ e }) => { const k = new Date(e.fecha_inicio).toLocaleDateString('es-CL', { weekday: 'long', day: '2-digit', month: 'short' }); (porDia[k] = porDia[k] || []).push(e); });
-      let html = `<h3>✨ Planificación automática — ${rangoLabel[rango]}</h3>
-        <p class="muted" style="margin-top:0;font-size:12.5px">Propuesta de orden de preparación y horarios. No modifica las reservas; es una guía para el pañol.</p>`;
+      const titulo = 'Planificación automática — ' + rangoLabel[rango];
+      let cuerpo = '', texto = titulo.toUpperCase() + '\n' + 'Pañol Online · ' + new Date().toLocaleString('es-CL') + '\n';
       Object.keys(porDia).forEach(k => {
         const items = porDia[k];
-        html += `<div class="plan"><h4>${cap(k)} · ${items.length} entrega${items.length === 1 ? '' : 's'}</h4>`;
+        cuerpo += `<div class="plan"><h4>${cap(k)} · ${items.length} entrega${items.length === 1 ? '' : 's'}</h4>`;
+        texto += `\n${cap(k)} (${items.length} entrega${items.length === 1 ? '' : 's'})\n`;
         let prevFin = null;
         items.forEach((e, n) => {
           const ini = new Date(e.fecha_inicio);
-          // Preparar 30 min antes del retiro.
-          const prep = new Date(ini.getTime() - 30 * 60000);
+          const prep = new Date(ini.getTime() - 30 * 60000);   // preparar 30 min antes
           const choque = prevFin && ini < prevFin;
           const sug = choque ? ' · escalonar +15 min' : '';
-          const tag = e.por_individualizar && (!e.unidades || !e.unidades.length) ? '<span class="tag">asignar unidad</span>'
-            : esAtr(e) ? '<span class="tag" style="background:#fdeeee;color:#dc2626">atrasada</span>' : '';
-          html += `<div class="ro"><div class="sl">${fmtHora(ini)}</div>
+          const estado = e.por_individualizar && (!e.unidades || !e.unidades.length) ? 'asignar unidad' : esAtr(e) ? 'atrasada' : '';
+          const tag = estado ? `<span class="tag" ${estado === 'atrasada' ? 'style="background:#fdeeee;color:#dc2626"' : ''}>${estado}</span>` : '';
+          cuerpo += `<div class="ro"><div class="sl">${fmtHora(ini)}</div>
             <div class="bd"><b>${n + 1}. ${RES(e.id)} — ${escD(e.item)}</b>
             <small>${escD(e.estudiante)} · preparar antes de ${fmtHora(prep)}${sug}</small></div>${tag}</div>`;
+          texto += `  ${fmtHora(ini)}  ${n + 1}. ${RES(e.id)} — ${e.item} · ${e.estudiante} · preparar antes de ${fmtHora(prep)}${sug}${estado ? ' [' + estado + ']' : ''}\n`;
           prevFin = new Date(e.fecha_fin || e.fecha_inicio);
         });
-        html += `</div>`;
+        cuerpo += `</div>`;
       });
-      html += `<button class="btn full" id="epPlanOk" style="margin-top:10px">Entendido</button>`;
+      const html = `<div id="printArea"><h3>✨ ${titulo}</h3>
+        <p class="muted" style="margin-top:0;font-size:12.5px">Propuesta de orden de preparación y horarios. No modifica las reservas; es una guía para el pañol.</p>
+        ${cuerpo}</div>
+        <div class="modbtns"><button id="epPlanPrint">🖨️ Imprimir</button><button id="epPlanMail">✉️ Enviar por correo</button><button class="pri" id="epPlanOk">Entendido</button></div>`;
       openModal(html);
       if ($('#epPlanOk')) $('#epPlanOk').onclick = closeModal;
+      if ($('#epPlanPrint')) $('#epPlanPrint').onclick = () => {
+        const w = window.open('', '_blank');
+        if (w) {
+          w.document.write(`<html><head><title>${titulo}</title><meta charset="utf8"><style>body{font-family:system-ui,Arial;margin:24px;color:#1f2937}h1{font-size:18px}h2{font-size:14px;margin:16px 0 6px;border-bottom:1px solid #ddd;padding-bottom:3px}pre{white-space:pre-wrap;font:13px/1.5 ui-monospace,Menlo,monospace}</style></head><body><h1>${titulo}</h1><pre>${escD(texto)}</pre></body></html>`);
+          w.document.close(); w.focus(); setTimeout(() => { try { w.print(); } catch (e) {} }, 300);
+        } else { window.print(); }
+      };
+      if ($('#epPlanMail')) $('#epPlanMail').onclick = () => {
+        const asunto = encodeURIComponent('Pañol Online · ' + titulo);
+        const body = encodeURIComponent(texto);
+        window.location.href = `mailto:?subject=${asunto}&body=${body}`;
+      };
     };
-
-    const reload = () => viewEntregasPlan(rango, ref, { keepId: E[sel] ? E[sel].id : null, filtro });
 
     const renderEditor = () => {
       const e = E[sel];
-      if (!e) { $('#epEditor').innerHTML = '<p class="muted" style="font-size:13px">Selecciona una entrega en la línea de tiempo.</p>'; return; }
+      if (!e) { $('#epEditor').innerHTML = '<p class="muted" style="font-size:13px">Selecciona una entrega en la lista o en “Próximas entregas”.</p>'; return; }
       const [elab] = estadoDe(e);
       const fecha = new Date(e.fecha_inicio);
       $('#epEditor').innerHTML = `
@@ -955,10 +1054,17 @@ function viewEntregasPlan(rango = 'hoy', ref = null, keep = null) {
       $('#epEditor').querySelectorAll('.edtabs button').forEach(b => b.onclick = () => showTab(b.dataset.t));
       showTab('datos');
     };
-    const renderEditorEmpty = () => { $('#epEditor').innerHTML = '<p class="muted" style="font-size:13px">Selecciona una entrega en la línea de tiempo o en “Próximas entregas”.</p>'; };
+    const renderEditorEmpty = () => { $('#epEditor').innerHTML = '<p class="muted" style="font-size:13px">Selecciona una entrega en la lista o en “Próximas entregas”. En Semana o Mes, toca un día/semana para ver el detalle.</p>'; };
 
-    const renderCenter = () => { $('#epCenter').innerHTML = rango === 'hoy' ? vtHtml() : listHtml(); bindCenter(); };
-    const bindCenter = () => { $('#epRoot').querySelectorAll('#epCenter .ev, #epCenter .lstit').forEach(b => b.onclick = () => selectIdx(Number(b.dataset.i))); };
+    const renderCenter = () => { $('#epCenter').innerHTML = centerHtml(); bindCenter(); };
+    const bindCenter = () => {
+      // Día: seleccionar una entrega.
+      $('#epRoot').querySelectorAll('#epCenter .drow').forEach(b => b.onclick = () => selectIdx(Number(b.dataset.i)));
+      // Semana: clic en un día → ver ese día.
+      $('#epRoot').querySelectorAll('#epCenter .wkcell[data-day]').forEach(b => b.onclick = () => viewEntregasPlan('hoy', b.dataset.day, { filtro }));
+      // Mes: clic en una semana → ver esa semana por días.
+      $('#epRoot').querySelectorAll('#epCenter .mwk[data-week]').forEach(b => b.onclick = () => viewEntregasPlan('semana', b.dataset.week, { filtro }));
+    };
     const selectIdx = i => { sel = i; renderCenter(); renderEditor(); DASHVIEW.keepId = E[sel] ? E[sel].id : null; };
     bindCenter();
     $('#epRoot').querySelectorAll('#epNext .nextit').forEach(b => b.onclick = () => selectIdx(Number(b.dataset.i)));
@@ -977,14 +1083,11 @@ function viewEntregasPlan(rango = 'hoy', ref = null, keep = null) {
       const f = a.dataset.flt; viewEntregasPlan(rango, ref, { keepId: E[sel] ? E[sel].id : null, filtro: filtro === f ? null : f });
     });
     if ($('#epFltClr')) $('#epFltClr').onclick = () => viewEntregasPlan(rango, ref, { keepId: E[sel] ? E[sel].id : null, filtro: null });
-    if (E.length && sel >= 0) renderEditor(); else renderEditorEmpty();
+    if (rango === 'hoy' && E.length && sel >= 0) renderEditor(); else renderEditorEmpty();
 
-    // Panel activo + actualización automática/online de los cambios de estado.
-    if ($('#epRoot')) {
-      DASHVIEW = { fn: 'ep', rango, ref, keepId: E[sel] ? E[sel].id : null, filtro };
-      stopDashPoll();
-      DASH_POLL = setInterval(() => { if (!dashBusy() && $('#epRoot')) reload(); else if (!$('#epRoot')) stopDashPoll(); }, 20000);
-    }
+    // Panel activo + actualización automática/online (silenciosa) de los cambios de estado.
+    DASHVIEW = { fn: 'ep', rango, ref, keepId: E[sel] ? E[sel].id : null, filtro, sig: dashSig(d) };
+    startDashPoll('ep');
   })();
 }
 
