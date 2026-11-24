@@ -1747,7 +1747,7 @@ function renderDev() {
       <div id="dQuick"></div>
     </div>`;
   $('#dEstado').value = D.fEstado;
-  $('#dvProg').onclick = viewDevolucionesProg;
+  $('#dvProg').onclick = () => viewDevolucionesProg(DEV.rows);
   $('#devRoot').querySelectorAll('.k[data-kpi]').forEach(c => c.onclick = () => { const kp = c.dataset.kpi; D.fKpi = (D.fKpi === kp) ? null : kp; D.page = 1; renderDev(); });
   $('#devRoot').querySelectorAll('.tabs button').forEach(b => b.onclick = () => { D.rango = b.dataset.r; D.page = 1; renderDev(); });
   $('#dEstado').onchange = () => { D.fEstado = $('#dEstado').value; D.page = 1; renderDevBody(); };
@@ -1915,8 +1915,20 @@ const DEVPROG_CSS = `
 .dprog .ptabs button.on{background:#0d9488;border-color:#0d9488;color:#fff}
 .dprog .ptabs button.on.r{background:#dc2626;border-color:#dc2626}
 .dprog .ptabs button.on.y{background:#d97706;border-color:#d97706}
-.dprog .pgrid{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:12px;align-items:start}
-@media(max-width:1150px){.dprog .pgrid{grid-template-columns:1fr}}
+.dprog .pgrid{display:grid;grid-template-columns:minmax(0,1fr) 440px;gap:12px;align-items:start}
+@media(max-width:1200px){.dprog .pgrid{grid-template-columns:1fr}}
+/* Flujo horizontal de la reserva (con el estado actual) */
+.dprog .hflow{display:flex;align-items:flex-start;background:#f8fafc;border:1px solid #eef1f5;border-radius:10px;padding:12px 8px}
+.dprog .hflow .st{flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:3px;text-align:center;min-width:0}
+.dprog .hflow .c{width:38px;height:38px;border-radius:50%;background:#eef2f7;color:#64748b;display:flex;align-items:center;justify-content:center;font-size:17px;position:relative}
+.dprog .hflow .st.done .c{background:#e7f8ee;color:#15803d}
+.dprog .hflow .st.now .c{background:#e8f0fe;color:#2563eb}
+.dprog .hflow .c .chk{position:absolute;right:-3px;bottom:-3px;width:16px;height:16px;border-radius:50%;background:#16a34a;color:#fff;font-size:9px;display:flex;align-items:center;justify-content:center;border:2px solid #fff}
+.dprog .hflow .c .chk.b{background:#2563eb}
+.dprog .hflow .t{font-weight:700;font-size:11.5px;color:#1f2937}
+.dprog .hflow .d{font-size:10px;color:#64748b;line-height:1.3}
+.dprog .hflow .ln{flex:0 0 14px;height:2px;background:#cbe7e1;margin-top:19px}
+.dprog .hflow .st.pend+.ln,.dprog .hflow .ln.pend{background:#e2e8f0}
 .dprog .card{background:#fff;border:1px solid #eceff4;border-radius:14px;overflow:hidden}
 .dprog .tw{overflow-x:auto}
 .dprog table{width:100%;border-collapse:collapse;min-width:620px}
@@ -1976,13 +1988,19 @@ const laneCat = c => { const t = String(c || '').toLowerCase();
   return 'Otros'; };
 const LANE_IC = { 'Cámaras': '📷', 'Iluminación': '💡', 'Sonido': '🎙️', 'Kits': '🧰', 'Otros': '🗂️' };
 
-async function viewDevolucionesProg() {
+async function viewDevolucionesProg(preRows) {
   h(`<div class="dprog"><style>${HIST_CSS}${DEVPROG_CSS}</style><div id="progRoot">Cargando…</div></div>`);
-  let d;
-  try { d = await api('/devoluciones/dashboard'); } catch (e) { $('#progRoot').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
-  const rows = (d && d.rows) || [];
+  // Reusa los datos ya cargados en la pantalla de Devoluciones (navegación instantánea);
+  // sólo consulta la API si no hay datos disponibles.
+  let rows = Array.isArray(preRows) ? preRows : (DEV && Array.isArray(DEV.rows) ? DEV.rows : null);
+  if (!rows) {
+    let d;
+    try { d = await api('/devoluciones/dashboard'); } catch (e) { if ($('#progRoot')) $('#progRoot').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
+    if (!$('#progRoot')) return;
+    rows = (d && d.rows) || [];
+  }
   PROG = { rows, ref: null, rango: 'dia', tab: 'proximas', sel: null, fCarr: 'todas', fTipo: 'todos', fResp: 'todos' };
-  renderProg();
+  try { renderProg(); } catch (e) { if ($('#progRoot')) $('#progRoot').innerHTML = `<div class="aviso bad">No se pudo mostrar la planificación: ${escD(e.message)}</div>`; }
 }
 
 const progIso = x => { const y = x.getFullYear(), m = ('0' + (x.getMonth() + 1)).slice(-2), dd = ('0' + x.getDate()).slice(-2); return `${y}-${m}-${dd}`; };
@@ -2220,13 +2238,21 @@ function renderProgDetail() {
     <div class="sh">📦 Equipamiento y accesorios esperados</div>
     <div class="eqrow"><span>${escD(r.equipo || r.categoria || '—')}${r.n_serie ? ' · ' + escD(r.n_serie) : ''}</span><b>1</b></div>
     ${r.modelo ? `<div class="eqrow"><span style="color:#64748b">Modelo: ${escD(r.modelo)}</span><span></span></div>` : ''}
-    <div class="sh">🕒 Línea de tiempo de la reserva</div>
-    <div class="vt">
-      ${step('done', 'Reserva creada', fFechaHora(r.retiro))}
-      ${step(r.fecha_salida ? 'done' : '', 'Equipos entregados', r.fecha_salida ? fFechaHora(r.fecha_salida) + (r.panolero ? ' · ' + escD(r.panolero) : '') : 'Pendiente')}
-      ${step(r.devuelto ? 'done' : 'now', 'Devolución programada', fFechaHora(r.prog_devolucion))}
-      ${step(r.devuelto ? 'done' : '', 'Recepción y cierre', r.devuelto ? fFechaHora(r.fecha_retorno) : 'Pendiente')}
-    </div>
+    <div class="sh">🔄 Flujo de la reserva <span style="font-weight:600;color:#64748b">· ${lbl}</span></div>
+    ${(() => {
+      const entregado = !!r.fecha_salida;
+      const hs = (cls, ico, t, fecha, nota) => `<div class="st ${cls}"><div class="c">${ico}${cls === 'done' ? `<span class="chk ${cls === 'now' ? 'b' : ''}">✓</span>` : ''}</div><div class="t">${t}</div><div class="d">${fecha || '—'}${nota ? '<br>' + nota : ''}</div></div>`;
+      const ln = done => `<div class="ln ${done ? '' : 'pend'}"></div>`;
+      return `<div class="hflow">
+        ${hs('done', '📅', 'Reserva', fFechaHora(r.retiro), escD(r.reserva_cod || ''))}
+        ${ln(entregado)}
+        ${hs(entregado ? 'done' : 'pend', '📦', 'Preparación', entregado ? fFechaHora(r.fecha_salida) : '—', 'Equipos preparados')}
+        ${ln(entregado)}
+        ${hs(entregado ? 'done' : 'pend', '🤝', 'Entrega', entregado ? fFechaHora(r.fecha_salida) : '—', entregado ? escD(r.cod) : 'Pendiente')}
+        ${ln(r.devuelto)}
+        ${hs(r.devuelto ? 'done' : 'now', '🏁', 'Cierre', r.devuelto ? fFechaHora(r.fecha_retorno) : '—', r.devuelto ? 'Cerrada' : 'En curso')}
+      </div>`;
+    })()}
     <div class="sh">✨ Recomendaciones de priorización</div>
     <div class="rec">
       ${st === 'atrasada' ? '<div class="r">⚠️ Devolución atrasada: contactar al estudiante.</div>' : '<div class="r">✓ Equipo con alta demanda: priorizar recepción.</div>'}
