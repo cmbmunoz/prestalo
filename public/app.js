@@ -1915,11 +1915,11 @@ const DEVPROG_CSS = `
 .dprog .ptabs button.on{background:#0d9488;border-color:#0d9488;color:#fff}
 .dprog .ptabs button.on.r{background:#dc2626;border-color:#dc2626}
 .dprog .ptabs button.on.y{background:#d97706;border-color:#d97706}
-.dprog .pgrid{display:grid;grid-template-columns:minmax(0,1fr) 520px;gap:12px;align-items:start}
-@media(max-width:1280px){.dprog .pgrid{grid-template-columns:1fr}}
-/* Detalle dividido en dos: info (izquierda) + flujo/línea de tiempo (derecha) */
-.dprog .dpcols{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
-@media(max-width:560px){.dprog .dpcols{grid-template-columns:1fr}}
+.dprog .pgrid{display:grid;grid-template-columns:minmax(0,1fr) 620px;gap:12px;align-items:start}
+@media(max-width:1380px){.dprog .pgrid{grid-template-columns:1fr}}
+/* Detalle dividido en dos: info (izquierda) + flujo como línea de tiempo (derecha) */
+.dprog .dpcols{display:grid;grid-template-columns:220px minmax(0,1fr);gap:14px;align-items:start}
+@media(max-width:620px){.dprog .dpcols{grid-template-columns:1fr}}
 .dprog .dpcols .col{min-width:0}
 .dprog .dpR{background:#f8fafc;border:1px solid #eef1f5;border-radius:10px;padding:12px}
 .dprog .dpR .stt{font-size:12px;font-weight:800;margin-bottom:10px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
@@ -2233,15 +2233,17 @@ function renderProgDetail() {
   const st = progEstado(r); const [c, bg, ic, lbl] = PROG_EST[st];
   const sede = (ME.sedes && (ME.sedes.find(s => s.id === SEDE) || {}).nombre) || 'Sede activa';
   const entregado = !!r.fecha_salida;
-  // Etapa actual del flujo (la que está "en curso").
-  const actual = r.devuelto ? 'cierre' : entregado ? 'cierre' : 'entrega';
-  const vstep = (cls, t, sub) => `<div class="st ${cls}"><b>${t}</b><small>${sub}</small></div>`;
-  const timeline = `<div class="vt">
-      ${vstep('done', 'Reserva creada', fFechaHora(r.retiro) + (r.reserva_cod ? ' · ' + escD(r.reserva_cod) : ''))}
-      ${vstep(entregado ? 'done' : (actual === 'preparacion' ? 'now' : ''), 'Equipos preparados', entregado ? 'Listos para entrega' : 'Pendiente')}
-      ${vstep(entregado ? 'done' : (actual === 'entrega' ? 'now' : ''), 'Equipos entregados', entregado ? fFechaHora(r.fecha_salida) + (r.panolero ? ' · ' + escD(r.panolero) : '') : 'Pendiente')}
-      ${vstep(r.devuelto ? 'done' : 'now', 'Devolución programada', fFechaHora(r.prog_devolucion))}
-      ${vstep(r.devuelto ? 'done' : '', 'Recepción y cierre', r.devuelto ? fFechaHora(r.fecha_retorno) : 'En curso')}
+  // Flujo horizontal (línea de tiempo) como la maqueta, con la etapa actual.
+  const hs = (cls, ico, t, fecha, nota) => `<div class="st ${cls}"><div class="c">${ico}${cls === 'done' ? `<span class="chk">✓</span>` : cls === 'now' ? `<span class="chk b">•</span>` : ''}</div><div class="t">${t}</div><div class="d">${fecha || '—'}${nota ? '<br>' + nota : ''}</div></div>`;
+  const ln = done => `<div class="ln ${done ? '' : 'pend'}"></div>`;
+  const timeline = `<div class="hflow">
+      ${hs('done', '📅', 'Reserva', fFechaHora(r.retiro), escD(r.reserva_cod || ''))}
+      ${ln(entregado)}
+      ${hs(entregado ? 'done' : 'pend', '📦', 'Preparación', entregado ? fFechaHora(r.fecha_salida) : '—', 'Equipos preparados')}
+      ${ln(entregado)}
+      ${hs(entregado ? 'done' : 'pend', '🤝', 'Entrega', entregado ? fFechaHora(r.fecha_salida) : '—', entregado ? escD(r.cod) : 'Pendiente')}
+      ${ln(r.devuelto)}
+      ${hs(r.devuelto ? 'done' : 'now', '🏁', 'Cierre', r.devuelto ? fFechaHora(r.fecha_retorno) : '—', r.devuelto ? 'Cerrada' : 'En curso')}
     </div>`;
   el.innerHTML = `<div class="dp">
     <div class="dh"><b>Detalle de devolución</b><button class="x" id="pClose" style="border:0;background:transparent;font-size:18px;color:#94a3b8;cursor:pointer">×</button></div>
