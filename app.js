@@ -40,6 +40,37 @@ function horasHabilesEntre(desde, hasta) {
 }
 const DEMO_PASSWORD = 'prestalo';
 
+// --- Bloques de 30 min y jornadas por sede (observaciones nov-2026) ---
+// Minutos del día en hora de Chile (America/Santiago), robusto ante el TZ del servidor.
+function minutosDiaCL(d) {
+  const s = new Date(d).toLocaleString('en-US', { timeZone: 'America/Santiago', hour12: false, hour: '2-digit', minute: '2-digit' });
+  const [h, m] = s.split(':').map(Number);
+  return (h % 24) * 60 + (m || 0);
+}
+function _hhmmToMin(v, def) {
+  if (v == null) return def;
+  const s = String(v); const m = s.match(/(\d{1,2}):(\d{2})/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : def;
+}
+// Valida que ini y fin caigan en bloques del tamaño de la sede y dentro de una
+// jornada (diurna o vespertina). cfg = fila de entidad con las columnas nuevas.
+// Devuelve un mensaje de error o null si todo correcto (o si aún no hay config).
+function validarBloques(ini, fin, cfg) {
+  if (!cfg || cfg.bloque_minutos == null) return null; // migración pendiente → no se exige
+  const bloque = Number(cfg.bloque_minutos) || 30;
+  const dI = _hhmmToMin(cfg.ventana_diurna_ini, 8 * 60), dF = _hhmmToMin(cfg.ventana_diurna_fin, 18 * 60 + 35);
+  const vI = _hhmmToMin(cfg.ventana_vesp_ini, 18 * 60 + 40), vF = _hhmmToMin(cfg.ventana_vesp_fin, 22 * 60);
+  const enJornada = min => (min >= dI && min <= dF) || (min >= vI && min <= vF);
+  for (const [etq, dt] of [['la hora de entrega', ini], ['la hora de devolución', fin]]) {
+    const min = minutosDiaCL(dt);
+    if (min % bloque !== 0)
+      return `${etq} debe caer en bloques de ${bloque} minutos (p. ej. 09:00, 09:30).`;
+    if (!enJornada(min))
+      return `${etq} debe estar dentro de la jornada diurna (08:00–18:35) o vespertina (18:40–22:00).`;
+  }
+  return null;
+}
+
 // ----------------------- Middleware de sesión -----------------------
 async function auth(req, res, next) {
   const h = req.headers.authorization || '';
@@ -338,13 +369,42 @@ app.post('/api/reservas', auth, requireRole('alumno', 'docente'), wrap(async (re
   if (sanc.rows.length)
     return res.status(403).json({ error: `Bloqueado por sanción vigente: ${sanc.rows[0].motivo} (hasta ${sanc.rows[0].fecha_fin})` });
 
+  // Bloques de 30 min y jornadas por sede (observaciones nov-2026)
+  let sedeCfg = null;
+  try {
+    sedeCfg = (await db.query(
+      `SELECT horas_anticipacion, bloque_minutos, ventana_diurna_ini, ventana_diurna_fin,
+              ventana_vesp_ini, ventana_vesp_fin FROM entidad WHERE id=$1`, [eq.entidad_id])).rows[0];
+  } catch (e) { if (e.code !== '42703') throw e; } // columnas aún sin migrar → se omite
+  const errBloque = validarBloques(ini, fin, sedeCfg);
+  if (errBloque) return res.status(400).json({ error: errBloque });
+
+  // Límite de solicitudes (observaciones nov-2026)
+  // Estudiante/grupo: solo una solicitud activa por asignatura (puede tener varias si son de asignaturas distintas).
+  if (asig) {
+    try {
+      const dup = await db.query(
+        `SELECT 1 FROM reserva WHERE usuario_rut=$1 AND asignatura_id=$2
+           AND estado IN ('pendiente','confirmada','en_uso') LIMIT 1`, [req.user.rut, asig]);
+      if (dup.rows.length)
+        return res.status(409).json({ error: 'Ya tienes una solicitud activa para esa asignatura. Puedes solicitar para otra asignatura distinta.' });
+    } catch (e) { if (e.code !== '42703') throw e; } // columna asignatura_id aún sin migrar → se omite
+  }
+  // Docente: hasta 3 solicitudes simultáneas y con al menos 1 semana de anticipación.
+  if (req.user.rol === 'docente') {
+    const act = (await db.query(
+      `SELECT count(*)::int n FROM reserva WHERE usuario_rut=$1 AND estado IN ('pendiente','confirmada','en_uso')`,
+      [req.user.rut])).rows[0].n;
+    if (act >= 3)
+      return res.status(409).json({ error: 'Como docente puedes tener hasta 3 solicitudes simultáneas de equipamiento.' });
+    if ((ini.getTime() - now.getTime()) < 7 * 24 * 3600 * 1000)
+      return res.status(400).json({ error: 'Las solicitudes de docentes requieren al menos una semana de anticipación.' });
+  }
+
   // Plazo de reserva: 48 h de anticipación como regla común, parametrizable por sede
   // (entidad.horas_anticipacion). Las solicitudes excepcionales van por el flujo especial.
   let minHoras = ANTICIPACION_MIN_H;
-  try {
-    const cfg = (await db.query(`SELECT horas_anticipacion FROM entidad WHERE id=$1`, [eq.entidad_id])).rows[0];
-    if (cfg && Number.isFinite(Number(cfg.horas_anticipacion))) minHoras = Number(cfg.horas_anticipacion);
-  } catch (e) { if (e.code !== '42703') throw e; } // 42703 = columna aún sin migrar → usa el valor común
+  if (sedeCfg && Number.isFinite(Number(sedeCfg.horas_anticipacion))) minHoras = Number(sedeCfg.horas_anticipacion);
 
   // RF-51/53: recinto o equipo que requiere autorización → autorización Jefatura/DAO
   // RF-11: la anticipación se cuenta en HORAS HÁBILES (días hábiles, sin fin de semana).
@@ -377,6 +437,9 @@ app.post('/api/reservas', auth, requireRole('alumno', 'docente'), wrap(async (re
     `INSERT INTO reserva (usuario_rut, equipo_id, fecha_inicio, fecha_fin, estado, uso_academico, es_grupal, motivo)
      VALUES ($1,$2,$3,$4,$5,TRUE,$6,$7) RETURNING id`,
     [req.user.rut, equipo_id, ini, fin, estado, esGrupal, motivo || null])).rows[0];
+
+  // Asignatura asociada (para el límite por asignatura) — fallback si aún no migra.
+  if (asig) { try { await db.query(`UPDATE reserva SET asignatura_id=$2 WHERE id=$1`, [r.id, asig]); } catch (e) { if (e.code !== '42703') throw e; } }
 
   // Integrantes (responsabilidad solidaria): el solicitante es responsable
   await db.query(
@@ -579,6 +642,15 @@ app.put('/api/reservas/:id/reprogramar', auth, requireRole(...OPERACION), wrap(a
   if (prest && ['abierto', 'atrasado'].includes(prest.estado))
     return res.status(409).json({ error: 'El equipo ya fue entregado; no se puede reprogramar' });
 
+  // Bloques de 30 min / jornadas por sede (observaciones nov-2026)
+  try {
+    const cfg = (await db.query(
+      `SELECT bloque_minutos, ventana_diurna_ini, ventana_diurna_fin, ventana_vesp_ini, ventana_vesp_fin
+       FROM entidad WHERE id=$1`, [r.entidad_id])).rows[0];
+    const eB = validarBloques(ini, fin, cfg);
+    if (eB) return res.status(400).json({ error: eB });
+  } catch (e) { if (e.code !== '42703') throw e; }
+
   // Prioridad de clases: no puede caer sobre un bloqueo de horario del equipo (o global)
   try {
     const bloq = (await db.query(
@@ -650,6 +722,17 @@ app.post('/api/entregar', auth, requireRole(...OPERACION), wrap(async (req, res)
   const r = (await db.query(`SELECT * FROM reserva WHERE id=$1`, [reserva_id])).rows[0];
   if (!r) return res.status(404).json({ error: 'Reserva no encontrada' });
   if (r.estado !== 'confirmada') return res.status(409).json({ error: `La reserva está ${r.estado}` });
+
+  // No permitir el retiro si el grupo tiene equipos pendientes de devolución (observaciones nov-2026)
+  try {
+    const miembros = (await db.query(
+      `SELECT DISTINCT COALESCE(usuario_rut, rut) AS rut FROM integrante WHERE reserva_id=$1`, [r.id])).rows.map(x => x.rut).filter(Boolean);
+    if (!miembros.includes(r.usuario_rut)) miembros.push(r.usuario_rut);
+    const pend = await db.query(
+      `SELECT 1 FROM prestamo WHERE estado IN ('abierto','atrasado') AND usuario_rut = ANY($1) LIMIT 1`, [miembros]);
+    if (pend.rows.length)
+      return res.status(409).json({ error: 'El grupo tiene equipos pendientes de devolución. Regulariza las devoluciones antes de un nuevo retiro.' });
+  } catch (e) { if (!['42703', '42P01'].includes(e.code)) throw e; }
 
   let equipoId = r.equipo_id;
   if (!equipoId) {

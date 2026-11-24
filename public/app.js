@@ -388,14 +388,17 @@ async function modalReserva(id) {
   const minH = (ME.sedes && (ME.sedes.find(s => s.id === SEDE) || {}).horas_anticipacion) || 48;
   const defIni = new Date(now.getTime() + (esRecinto ? Math.max(73, minH + 1) : (minH + 1)) * 3600000);
   const toLocal = d => new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  // Redondea al próximo bloque de 30 min (coherente con la validación por sede).
+  const rndBloque = d => { const x = new Date(d); x.setSeconds(0, 0); const m = x.getMinutes(); const r = m % 30; if (r) x.setMinutes(m - r + 30); return x; };
   openModal(`
     <h3>Reservar: ${e.nombre}</h3>
     <p class="muted" style="margin-top:0">${e.categoria} · ${e.codigo_qr}</p>
     ${dispInfo}
     ${esRecinto ? `<div class="aviso warn">Recinto: requiere 72 h de anticipación y autorización de Jefatura de Carrera y Dirección Académica (DAO).</div>` : ''}
     ${asigs.length ? `<div class="field"><label>Asignatura</label><select id="rAsig">${asigs.map(a=>`<option value="${a.id}">${a.nombre}${a.seccion?' · '+a.seccion:''}</option>`).join('')}</select></div>` : '<div class="aviso bad">No tienes asignaturas inscritas.</div>'}
-    <div class="field"><label>Inicio</label><input type="datetime-local" id="rIni" value="${toLocal(defIni)}"></div>
-    <div class="field"><label>Término</label><input type="datetime-local" id="rFin" value="${toLocal(new Date(defIni.getTime()+3*3600000))}"></div>
+    <div class="field"><label>Inicio</label><input type="datetime-local" id="rIni" step="1800" value="${toLocal(rndBloque(defIni))}"></div>
+    <div class="field"><label>Término</label><input type="datetime-local" id="rFin" step="1800" value="${toLocal(rndBloque(new Date(defIni.getTime()+3*3600000)))}"></div>
+    <p class="muted" style="margin:-4px 0 6px;font-size:12px">Horarios en bloques de 30 min · jornada diurna 08:00–18:35 o vespertina 18:40–22:00.</p>
     <label style="font-size:12px;font-weight:600;color:var(--muted)">Integrantes del grupo (opcional — RF-52)</label>
     <div id="integrantes"></div>
     <button class="btn sm ghost" id="addInt" style="margin:4px 0 8px">+ Agregar integrante</button>

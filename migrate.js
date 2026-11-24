@@ -27,6 +27,8 @@ const STEPS = [
   // Notificación: tipo y estado de envío (log; el envío real se activa con SMTP)
   `ALTER TABLE notificacion ADD COLUMN IF NOT EXISTS tipo   VARCHAR(30)`,
   `ALTER TABLE notificacion ADD COLUMN IF NOT EXISTS estado VARCHAR(20) DEFAULT 'pendiente'`,
+  // Reserva: asignatura asociada (para el límite de solicitudes por asignatura)
+  `ALTER TABLE reserva ADD COLUMN IF NOT EXISTS asignatura_id INTEGER`,
 ];
 
 async function migrate() {
