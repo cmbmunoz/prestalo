@@ -739,12 +739,13 @@ const ENTP_CSS = `
 .entp .nextit .bd b{font-size:12.5px}.entp .nextit .bd small{display:block;color:#6b7280;font-size:11px}
 .entp .badge{margin-left:auto;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px}
 .entp .badge.prep{background:#fff5e6;color:#b45309}.entp .badge.conf{background:#eafaf0;color:#16a34a}.entp .badge.atr{background:#fdeeee;color:#dc2626}
-.entp .seg{display:flex;background:#eef1f5;border-radius:9px;padding:3px}
-.entp .seg button{border:0;background:transparent;padding:6px 14px;border-radius:7px;font-weight:600;font-size:12.5px;color:#4b5563;cursor:pointer}
-.entp .seg button.on{background:#2563eb;color:#fff}
-.entp .cal .caltop{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
-.entp .cal .nav{display:flex;align-items:center;gap:10px;font-weight:700;font-size:13.5px}
-.entp .cal .nav button{border:1px solid #d7dce3;background:#fff;border-radius:8px;padding:4px 9px;cursor:pointer}
+.entp .seg{display:flex;background:#eef1f5;border-radius:10px;padding:4px}
+.entp .seg button{border:0;background:transparent;padding:8px 20px;border-radius:8px;font-weight:700;font-size:13px;color:#475569;cursor:pointer}
+.entp .seg button.on{background:#0d9488;color:#fff}
+.entp .cal .caltop{display:flex;justify-content:flex-start;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px}
+.entp .cal .nav{display:flex;align-items:center;gap:10px;font-weight:800;font-size:14px}
+.entp .cal .nav button{width:36px;height:36px;border:1px solid #e6e9ef;background:#fff;border-radius:9px;cursor:pointer;font-size:16px;color:#334155;display:flex;align-items:center;justify-content:center}
+.entp .cal .nav .mlab{font-weight:800;font-size:14px;white-space:nowrap}
 .entp .vt{position:relative;border-top:1px solid #eef1f5;padding-top:6px}
 .entp .vt .hr{position:absolute;left:0;right:0;border-top:1px dashed #eef1f5;font-size:10.5px;color:#9aa3af;padding-left:2px}
 .entp .vt .ev{position:absolute;border-radius:10px;padding:8px 11px;background:#fff;color:#1f2937;box-shadow:0 1px 3px rgba(0,0,0,.08);overflow:hidden;cursor:pointer;border:1px solid #eef1f5;border-left:5px solid #94a3b8}
@@ -959,9 +960,10 @@ function viewEntregasPlan(rango = 'hoy', ref = null, keep = null, opts = {}) {
         </div>
         <div>
           <div class="pnl cal">
-            <div class="caltop"><div class="seg"><button data-r="hoy" class="${rango === 'hoy' ? 'on' : ''}">Día</button><button data-r="semana" class="${rango === 'semana' ? 'on' : ''}">Semana</button><button data-r="mes" class="${rango === 'mes' ? 'on' : ''}">Mes</button></div>
-              <div class="nav"><button id="epPrev">‹</button>📅 ${navLbl}<button id="epNext2">›</button>
-                ${rango === 'hoy' ? '' : `<input type="date" class="refpick" id="epRef" value="${isoDay(baseD)}" title="Elegir ${rango === 'semana' ? 'la semana' : 'el mes'}">`}</div></div>
+            <div class="caltop">
+              <div class="nav"><button id="epPrev">‹</button><span class="mlab">📅 ${cap(baseD.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' }))}</span><button id="epNext2">›</button></div>
+              <div class="seg"><button data-r="hoy" class="${rango === 'hoy' ? 'on' : ''}">Día</button><button data-r="semana" class="${rango === 'semana' ? 'on' : ''}">Semana</button><button data-r="mes" class="${rango === 'mes' ? 'on' : ''}">Mes</button></div>
+            </div>
             <div id="epCenter">${centerHtml()}</div>
           </div>
           <div class="chips">
