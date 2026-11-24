@@ -1148,9 +1148,9 @@ const HIST_CSS = `
 .hist .tbar .srch::before{content:"🔎";position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:13px;opacity:.6}
 .hist .tbar .b{height:40px;border:1px solid #d7dce3;background:#fff;border-radius:10px;padding:0 14px;font-size:13px;font-weight:700;cursor:pointer;color:#334155;display:flex;align-items:center;gap:7px}
 .hist .tbar .b.tl{background:#0d9488;border-color:#0d9488;color:#fff}
-/* La tabla SIEMPRE ocupa todo el ancho (las 9 columnas siempre visibles) y
-   el detalle se muestra debajo a ancho completo, con todos los campos. */
-.hist .grid{display:grid;grid-template-columns:1fr;gap:14px;align-items:start}
+/* Tabla + panel de detalle al costado derecho (se apila en pantallas angostas). */
+.hist .grid{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:14px;align-items:start}
+@media(max-width:1150px){.hist .grid{grid-template-columns:1fr}}
 .hist .card{background:#fff;border:1px solid #eceff4;border-radius:14px;overflow:hidden}
 .hist .tw{overflow-x:auto}
 .hist table{width:100%;border-collapse:collapse;min-width:720px}
@@ -1179,8 +1179,8 @@ const HIST_CSS = `
 .hist .pag .pg button:disabled{opacity:.45;cursor:default}
 .hist .pag .mut{color:#64748b;font-size:12.5px}
 /* Panel de detalle lateral */
-.hist .dp{background:#fff;border:1px solid #eceff4;border-radius:14px;padding:16px}
-.hist .dp .kgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:4px 18px}
+.hist .dp{background:#fff;border:1px solid #eceff4;border-radius:14px;padding:16px;position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}
+.hist .dp .kgrid{display:grid;grid-template-columns:1fr;gap:6px}
 .hist .dp .kgrid.one{grid-template-columns:1fr}
 .hist .dp .kv .l{color:#64748b;display:block;font-size:11px}
 .hist .dp .sech{font-size:12px;font-weight:800;color:#0f172a;text-transform:none;margin-bottom:4px;display:flex;align-items:center;gap:6px}
@@ -1371,7 +1371,6 @@ function renderHistBody() {
       if (act === 'comp') return comprobante(r);
       if (act === 'mas') return;
       HIST.sel = r; renderHistBody(); renderDetail();
-      const dt = $('#hDetail'); if (dt) dt.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
   });
   $('#hPag').querySelectorAll('button[data-pg]').forEach(b2 => b2.onclick = () => {
