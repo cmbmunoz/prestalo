@@ -720,7 +720,10 @@ app.get('/api/panol/dashboard', auth, requireRole(...OPERACION), wrap(async (req
     ? `r.fecha_inicio >= date_trunc('month', ${RD}) AND r.fecha_inicio < date_trunc('month', ${RD}) + interval '1 month'`
     : `r.fecha_inicio::date = ${RD}`;
 
-  const entregasDe = async (whereRango) => {
+  // whereRango puede referenciar $1 (sede) y, si corresponde, $2 (ref). Los parámetros
+  // se pasan explícitamente para que coincidan con los placeholders usados (evita el
+  // error "bind message supplies N parameters, but prepared statement requires M").
+  const entregasDe = async (whereRango, params = [sede, ref]) => {
     const rows = (await db.query(
       `SELECT r.id, r.fecha_inicio, r.fecha_fin, u.nombre AS estudiante, u.rut,
               COALESCE(ta.nombre,'—') AS asignatura,
@@ -734,13 +737,18 @@ app.get('/api/panol/dashboard', auth, requireRole(...OPERACION), wrap(async (req
        LEFT JOIN tarea t ON t.id=r.tarea_id
        LEFT JOIN asignatura ta ON ta.id=t.asignatura_id
        WHERE r.estado='confirmada' AND COALESCE(e.entidad_id,u.entidad_id)=$1 AND ${whereRango}
-       ORDER BY r.fecha_inicio`, [sede, ref])).rows;
-    for (const row of rows) {
-      if (row.por_individualizar && row.categoria_id) {
-        row.unidades = (await db.query(
-          `SELECT id, nombre, codigo_qr FROM equipo WHERE categoria_id=$1 AND entidad_id=$2 AND estado='disponible' ORDER BY codigo_qr`,
-          [row.categoria_id, sede])).rows;
-      }
+       ORDER BY r.fecha_inicio`, params)).rows;
+    // Unidades disponibles para las reservas por individualizar: una sola consulta
+    // (antes era N+1, una por reserva) y luego se reparten por categoría.
+    const catIds = [...new Set(rows.filter(r => r.por_individualizar && r.categoria_id).map(r => r.categoria_id))];
+    if (catIds.length) {
+      const un = (await db.query(
+        `SELECT id, nombre, codigo_qr, categoria_id FROM equipo
+         WHERE categoria_id = ANY($1) AND entidad_id=$2 AND estado='disponible' ORDER BY codigo_qr`,
+        [catIds, sede])).rows;
+      const byCat = {};
+      for (const u of un) (byCat[u.categoria_id] ||= []).push({ id: u.id, nombre: u.nombre, codigo_qr: u.codigo_qr });
+      for (const row of rows) if (row.por_individualizar && row.categoria_id) row.unidades = byCat[row.categoria_id] || [];
     }
     return rows;
   };
@@ -748,7 +756,7 @@ app.get('/api/panol/dashboard', auth, requireRole(...OPERACION), wrap(async (req
   // Detalle de TODAS las reservas pendientes (por entregar) — coincide con el KPI
   // "Reservas pendientes" (backlog, independiente del rango) para que al pulsarlo
   // la tabla muestre exactamente esos registros.
-  const reservas_pend = await entregasDe('1=1');
+  const reservas_pend = await entregasDe('1=1', [sede]);
 
   const devoluciones = (await db.query(
     `SELECT p.id, p.fecha_salida, r.fecha_fin AS esperada, u.nombre AS estudiante,
