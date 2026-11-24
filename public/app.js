@@ -18,7 +18,15 @@ const ESTADO_RES = {
 };
 
 // ---------- API helper ----------
-async function api(path, { method = 'GET', body } = {}) {
+// Caché breve para GET de paneles (acelera la navegación entre vistas).
+// Se invalida ante cualquier mutación (POST/PUT/DELETE) y al cambiar de sede.
+const API_CACHE = new Map();
+const API_TTL = 3500;
+const apiCacheable = p => /^\/(panol\/dashboard|devoluciones\/dashboard|entregas\/historial)/.test(p);
+function apiCacheClear() { API_CACHE.clear(); }
+async function api(path, { method = 'GET', body, fresh = false } = {}) {
+  const key = (method === 'GET' && !fresh && apiCacheable(path)) ? SEDE + '|' + path : null;
+  if (key) { const c = API_CACHE.get(key); if (c && Date.now() - c.t < API_TTL) return c.data; }
   const res = await fetch('/api' + path, {
     method,
     headers: {
@@ -29,7 +37,9 @@ async function api(path, { method = 'GET', body } = {}) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
+  if (method !== 'GET') apiCacheClear();            // cualquier cambio invalida la caché
   if (!res.ok) throw new Error(data.error || 'Error ' + res.status);
+  if (key) API_CACHE.set(key, { t: Date.now(), data });
   return data;
 }
 function toast(msg) {
@@ -284,7 +294,7 @@ function startDashPoll(kind) {
     if (!$(sel)) { stopDashPoll(); return; }
     if (dashBusy()) return;
     let d2;
-    try { d2 = await api('/panol/dashboard?rango=' + DASHVIEW.rango + (DASHVIEW.ref ? '&ref=' + DASHVIEW.ref : '')); } catch (e) { return; }
+    try { d2 = await api('/panol/dashboard?rango=' + DASHVIEW.rango + (DASHVIEW.ref ? '&ref=' + DASHVIEW.ref : ''), { fresh: true }); } catch (e) { return; }
     if (!$(sel) || dashBusy()) return;
     if (dashSig(d2) === DASHVIEW.sig) return;              // nada cambió → no tocar el DOM
     if (kind === 'inv') viewInventarioDash(DASHVIEW.rango, DASHVIEW.modo, DASHVIEW.ref, { silent: true, data: d2 });
@@ -530,9 +540,10 @@ function fmtFechaLarga(d) {
 async function viewInventarioDash(rango = 'hoy', modo = 'programadas', ref = null, opts = {}) {
   const silent = !!opts.silent;
   const prevSrch = silent && $('#tSrch') ? $('#tSrch').value : '';
-  if (!silent) h(`<div class="invd"><style>${INVDASH_CSS}</style><div id="invDash">Cargando…</div></div>`);
+  // Fetch primero (mantiene la vista actual hasta tener datos → sin "Cargando…").
   let d = opts.data;
-  if (!d) { try { d = await api('/panol/dashboard?rango=' + rango + (ref ? '&ref=' + ref : '')); } catch (e) { if (!silent && $('#invDash')) $('#invDash').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; } }
+  if (!d) { try { d = await api('/panol/dashboard?rango=' + rango + (ref ? '&ref=' + ref : '')); } catch (e) { if (!silent) h(`<div class="invd"><div class="aviso bad">${escD(e.message)}</div></div>`); return; } }
+  if (!silent) h(`<div class="invd"><style>${INVDASH_CSS}</style><div id="invDash"></div></div>`);
   if (!$('#invDash')) return;
   const rangoLabel = { hoy: 'Hoy', semana: 'Esta semana', mes: 'Este mes' };
   // Fecha base: la elegida en el calendario (ref) o hoy.
@@ -817,10 +828,11 @@ const ENTP_CSS = `
 `;
 function viewEntregasPlan(rango = 'hoy', ref = null, keep = null, opts = {}) {
   const silent = !!opts.silent;
-  if (!silent) h(`<div class="entp"><style>${ENTP_CSS}</style><div id="epRoot">Cargando…</div></div>`);
   (async () => {
+    // Fetch primero (mantiene la vista actual hasta tener datos → sin "Cargando…").
     let d = opts.data;
-    if (!d) { try { d = await api('/panol/dashboard?rango=' + rango + (ref ? '&ref=' + ref : '')); } catch (e) { if (!silent && $('#epRoot')) $('#epRoot').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; } }
+    if (!d) { try { d = await api('/panol/dashboard?rango=' + rango + (ref ? '&ref=' + ref : '')); } catch (e) { if (!silent) h(`<div class="entp"><div class="aviso bad">${escD(e.message)}</div></div>`); return; } }
+    if (!silent) h(`<div class="entp"><style>${ENTP_CSS}</style><div id="epRoot"></div></div>`);
     if (!$('#epRoot')) return;
     const E = d.entregas;
     const rangoLabel = { hoy: 'hoy', semana: 'esta semana', mes: 'este mes' };
@@ -1256,9 +1268,10 @@ function fFechaDos(t) { if (!t) return '<span style="color:#cbd5e1">—</span>';
 function fFechaHora(t) { if (!t) return '—'; try { const d = new Date(t); return d.toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' }) + ' · ' + d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }); } catch (e) { return '—'; } }
 
 async function viewHistorialEntregas() {
-  h(`<div class="hist"><style>${HIST_CSS}</style><div id="histRoot">Cargando…</div></div>`);
+  // Fetch primero (mantiene la vista actual hasta tener datos → sin "Cargando…").
   let d;
-  try { d = await api('/entregas/historial'); } catch (e) { $('#histRoot').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
+  try { d = await api('/entregas/historial'); } catch (e) { h(`<div class="hist"><div class="aviso bad">${escD(e.message)}</div></div>`); return; }
+  h(`<div class="hist"><style>${HIST_CSS}</style><div id="histRoot"></div></div>`);
   const rows = Array.isArray(d) ? d : (d.rows || []);
   const kpis = (d && d.kpis) || { realizadas: rows.length, pendientes: 0, atrasadas: 0, incidencias: 0 };
   HIST = { rows, kpis, page: 1, perPage: 8, sel: null, fEstado: 'todos', fResp: 'todos', fDesde: '', fHasta: '', q: '', fKpi: null };
@@ -1679,9 +1692,10 @@ function devEnRango(r, rango) {
 }
 
 async function viewDevoluciones() {
-  h(`<div class="hist dev"><style>${HIST_CSS}${DEV_CSS}</style><div id="devRoot">Cargando…</div></div>`);
+  // Fetch primero (mantiene la vista actual hasta tener datos → sin "Cargando…").
   let d;
-  try { d = await api('/devoluciones/dashboard'); } catch (e) { $('#devRoot').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
+  try { d = await api('/devoluciones/dashboard'); } catch (e) { h(`<div class="hist dev"><div class="aviso bad">${escD(e.message)}</div></div>`); return; }
+  h(`<div class="hist dev"><style>${HIST_CSS}${DEV_CSS}</style><div id="devRoot"></div></div>`);
   const rows = Array.isArray(d) ? d : (d.rows || []);
   const kpis = (d && d.kpis) || { hoy: 0, pendientes: rows.length, atrasadas: 0, incidencias: 0 };
   DEV = { rows, kpis, rango: 'hoy', fKpi: null, fEstado: 'todos', fCarr: 'todas', fResp: 'todos', fDesde: '', fHasta: '', q: '', sel: null, page: 1, perPage: 8, estadoFisico: 'bueno', danos: false, obs: '', metodo: 'qr' };
@@ -1998,16 +2012,15 @@ const laneCat = c => { const t = String(c || '').toLowerCase();
 const LANE_IC = { 'Cámaras': '📷', 'Iluminación': '💡', 'Sonido': '🎙️', 'Kits': '🧰', 'Otros': '🗂️' };
 
 async function viewDevolucionesProg(preRows) {
-  h(`<div class="dprog"><style>${HIST_CSS}${DEVPROG_CSS}</style><div id="progRoot">Cargando…</div></div>`);
-  // Reusa los datos ya cargados en la pantalla de Devoluciones (navegación instantánea);
-  // sólo consulta la API si no hay datos disponibles.
+  // Reusa los datos ya cargados en Devoluciones (instantáneo); si no, consulta ANTES de
+  // cambiar la pantalla (mantiene la vista actual hasta tener datos → sin "Cargando…").
   let rows = Array.isArray(preRows) ? preRows : (DEV && Array.isArray(DEV.rows) ? DEV.rows : null);
   if (!rows) {
     let d;
-    try { d = await api('/devoluciones/dashboard'); } catch (e) { if ($('#progRoot')) $('#progRoot').innerHTML = `<div class="aviso bad">${escD(e.message)}</div>`; return; }
-    if (!$('#progRoot')) return;
+    try { d = await api('/devoluciones/dashboard'); } catch (e) { h(`<div class="dprog"><div class="aviso bad">${escD(e.message)}</div></div>`); return; }
     rows = (d && d.rows) || [];
   }
+  h(`<div class="dprog"><style>${HIST_CSS}${DEVPROG_CSS}</style><div id="progRoot"></div></div>`);
   PROG = { rows, ref: null, rango: 'dia', tab: 'proximas', sel: null, fCarr: 'todas', fTipo: 'todos', fResp: 'todos' };
   try { renderProg(); } catch (e) { if ($('#progRoot')) $('#progRoot').innerHTML = `<div class="aviso bad">No se pudo mostrar la planificación: ${escD(e.message)}</div>`; }
 }
