@@ -166,7 +166,7 @@ const MENUS = {
              [null,null,'Entregas'],
              ['entregas_plan','🚚','Planificación y ejecución'],['entregas_hist','🧾','Historial de entregas'],
              [null,null,'Operación'],
-             ['recibir','↩️','Devoluciones'],['pedidos','🧾','Pedidos'],['equipos','🧰','Equipos'],['importar','📦','Importar inventario'],['disponibilidad','🗓️','Disponibilidad'],['bloqueos','🚫','Bloqueos'],
+             ['recibir','↩️','Devoluciones'],['equipos','🧰','Equipos'],['importar','📦','Importar inventario'],['disponibilidad','🗓️','Disponibilidad'],['bloqueos','🚫','Bloqueos'],
              [null,null,'Sistema'],
              ['anuncios','📢','Anuncios'],['manuales','❓','Ayuda'],['perfil','👤','Mi perfil']],
   // Jefe de Pañol: operación + catálogo/mantención de SU sede (sin administración general)
@@ -174,7 +174,7 @@ const MENUS = {
              [null,null,'Entregas'],
              ['entregas_plan','🚚','Planificación y ejecución'],['entregas_hist','🧾','Historial de entregas'],
              [null,null,'Operación'],
-             ['recibir','↩️','Devoluciones'],['pedidos','🧾','Pedidos'],['disponibilidad','🗓️','Disponibilidad'],['bloqueos','🚫','Bloqueos'],
+             ['recibir','↩️','Devoluciones'],['disponibilidad','🗓️','Disponibilidad'],['bloqueos','🚫','Bloqueos'],
              [null,null,'Pañol de mi sede'],
              ['equipos','🧰','Equipos'],['mantenciones','🔧','Mantenciones'],['importar','📦','Importar inventario'],
              [null,null,'Sistema'],
@@ -183,7 +183,7 @@ const MENUS = {
              [null,null,'Entregas'],
              ['entregas_plan','🚚','Planificación y ejecución'],['entregas_hist','🧾','Historial de entregas'],
              [null,null,'Operación'],
-             ['kpis','📊','Panel'],['reportes','📈','Reportes'],['equipos','🧰','Equipos'],['pedidos','🧾','Pedidos'],['disponibilidad','🗓️','Disponibilidad'],['bloqueos','🚫','Bloqueos'],['mantenciones','🔧','Mantenciones'],
+             ['kpis','📊','Panel'],['reportes','📈','Reportes'],['equipos','🧰','Equipos'],['disponibilidad','🗓️','Disponibilidad'],['bloqueos','🚫','Bloqueos'],['mantenciones','🔧','Mantenciones'],
              [null,null,'Gestión académica'],
              ['importar','📥','Importar Excel'],['autoriz','✅','Autorizaciones'],['grupos','👪','Grupos'],['kits','🎒','Kits'],['sanciones','⛔','Sanciones'],['usuarios','👥','Usuarios'],['academico','🎓','Académico'],['catalogos','🗂️','Catálogos'],
              [null,null,'Sistema'],
@@ -674,14 +674,23 @@ async function viewInventarioDash(rango = 'hoy', modo = 'programadas', ref = nul
     let filas;
     if (modo === 'confirmadas') {
       filas = (d.entregadas_hoy || []).map(p => ({ tipo: 'confirmada', hora: p.fecha_salida, estudiante: p.estudiante, asignatura: '—', item: p.equipo, categoria: p.categoria, ref: p }));
+    } else if (modo === 'pendientes') {
+      // Reservas pendientes = backlog completo (coincide con el número del KPI).
+      const base = d.reservas_pend || d.entregas;
+      filas = base.map(a => ({ tipo: 'entrega', hora: a.fecha_inicio, estudiante: a.estudiante, asignatura: a.asignatura, item: a.item, categoria: a.categoria, por_individualizar: a.por_individualizar, ref: a }));
+      filas.sort((x, y) => new Date(x.hora) - new Date(y.hora));
     } else {
       const ent = d.entregas.map(a => ({ tipo: 'entrega', hora: a.fecha_inicio, estudiante: a.estudiante, asignatura: a.asignatura, item: a.item, categoria: a.categoria, por_individualizar: a.por_individualizar, ref: a }));
       const dev = d.devoluciones.map(p => ({ tipo: 'devolucion', hora: p.esperada || p.fecha_salida, estudiante: p.estudiante, asignatura: '—', item: p.equipo, categoria: p.categoria, ref: p }));
-      filas = modo === 'pendientes' ? ent : modo === 'devoluciones' ? dev : [...ent, ...dev];
+      filas = modo === 'devoluciones' ? dev : [...ent, ...dev];
       filas.sort((x, y) => new Date(x.hora) - new Date(y.hora));
     }
     const lista = filas.filter(f => !q || (f.estudiante + ' ' + f.asignatura + ' ' + f.item).toLowerCase().includes(q));
     const colFecha = modo === 'devoluciones' ? 'Fecha devolución ↕' : 'Fecha de entrega ↕';
+    const vacio = { programadas: 'No hay registros para ' + rangoLabel[rango].toLowerCase() + '.',
+      pendientes: 'No hay reservas pendientes por entregar.',
+      confirmadas: 'No hay entregas confirmadas hoy.',
+      devoluciones: 'No hay devoluciones esperadas.' }[modo] || 'No hay registros.';
     $('#invTblWrap').innerHTML = `<div class="tbh"><h3>📦 ${tit} (${lista.length})</h3></div>
       <div style="overflow-x:auto"><table><thead><tr><th>${colFecha}</th><th>Hora ↕</th><th>Estudiante ↕</th><th>Asignatura ↕</th><th>Equipo o Kit ↕</th><th>Cantidad ↕</th><th>Estado ↕</th><th>Acciones</th></tr></thead>
       <tbody>${lista.length ? lista.map((f, i) => {
@@ -696,7 +705,7 @@ async function viewInventarioDash(rango = 'hoy', modo = 'programadas', ref = nul
           <td><span class="itico">${icon(f.categoria || f.item)}</span>${escD(f.item)}${f.por_individualizar ? ' <span class="st pend" style="font-size:10px">por asignar</span>' : ''}</td>
           <td style="text-align:center">1</td><td>${st}</td>
           <td style="display:flex;gap:6px;align-items:center">${acc}<button class="dots">⋯</button></td></tr>`;
-      }).join('') : `<tr><td colspan="8" class="muted" style="padding:16px">No hay registros para ${rangoLabel[rango].toLowerCase()}.</td></tr>`}</tbody></table></div>`;
+      }).join('') : `<tr><td colspan="8" class="muted" style="padding:16px">${vacio}</td></tr>`}</tbody></table></div>`;
     $('#invTblWrap').querySelectorAll('.ent').forEach(b => b.onclick = () => modalEntregar(lista[Number(b.dataset.i)].ref));
     $('#invTblWrap').querySelectorAll('.rec').forEach(b => { const r = lista[Number(b.dataset.i)].ref; b.onclick = () => modalRecibir({ prestamo_id: r.id, equipo: r.equipo, codigo_qr: r.codigo_qr, n_serie: r.n_serie, marca: r.marca, modelo: r.modelo }); });
   };

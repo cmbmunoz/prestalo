@@ -745,6 +745,10 @@ app.get('/api/panol/dashboard', auth, requireRole(...OPERACION), wrap(async (req
     return rows;
   };
   const entregas = await entregasDe(cond);                                   // según el rango+ref (tabla / vista semana-mes / línea de tiempo)
+  // Detalle de TODAS las reservas pendientes (por entregar) — coincide con el KPI
+  // "Reservas pendientes" (backlog, independiente del rango) para que al pulsarlo
+  // la tabla muestre exactamente esos registros.
+  const reservas_pend = await entregasDe('1=1');
 
   const devoluciones = (await db.query(
     `SELECT p.id, p.fecha_salida, r.fecha_fin AS esperada, u.nombre AS estudiante,
@@ -779,7 +783,7 @@ app.get('/api/panol/dashboard', auth, requireRole(...OPERACION), wrap(async (req
   } catch (e) { /* tolerante */ }
 
   res.json({ rango, ref, reservas_pendientes, entregas_hoy, devoluciones_hoy, alertas_stock,
-    prog_hoy, prog_semana, prog_mes, entregas, devoluciones, entregadas_hoy, stock_bajo });
+    prog_hoy, prog_semana, prog_mes, entregas, reservas_pend, devoluciones, entregadas_hoy, stock_bajo });
 }));
 
 // Historial de entregas (préstamos) de la sede.
