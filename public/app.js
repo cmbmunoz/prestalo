@@ -1889,10 +1889,13 @@ const DEVPROG_CSS = `
 .dprog .today .big{font-size:22px;font-weight:800;margin:2px 0}
 .dprog .lanes{position:relative;overflow-x:auto}
 .dprog .axis{display:flex;justify-content:space-between;font-size:10.5px;color:#9aa3af;margin:0 0 4px 96px}
-.dprog .lane{display:flex;align-items:center;gap:8px;height:42px;border-top:1px solid #f1f5f9}
+.dprog .axis.cols{justify-content:flex-start}
+.dprog .axis.cols .c{flex:1;text-align:center}
+.dprog .lane{display:flex;align-items:center;gap:8px;min-height:42px;border-top:1px solid #f1f5f9}
 .dprog .lane .lb{width:88px;flex:0 0 auto;font-size:11.5px;color:#475569;font-weight:700;display:flex;align-items:center;gap:5px}
-.dprog .track{position:relative;flex:1;height:100%;min-width:420px}
-.dprog .ev{position:absolute;top:7px;height:26px;display:flex;align-items:center;gap:5px;padding:0 8px;border-radius:7px;font-size:11px;font-weight:700;white-space:nowrap;cursor:pointer;border:1px solid}
+.dprog .track{position:relative;flex:1;align-self:stretch;min-width:420px}
+.dprog .ev{position:absolute;height:24px;box-sizing:border-box;display:flex;align-items:center;gap:5px;padding:0 7px;border-radius:7px;font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;border:1px solid}
+.dprog .ev .ck{flex:0 0 auto}
 .dprog .ev .ck{font-size:10px}
 .dprog .nowl{position:absolute;top:-2px;bottom:0;width:2px;background:#2563eb;z-index:3}
 .dprog .nowl .pin{position:absolute;top:-16px;left:50%;transform:translateX(-50%);background:#2563eb;color:#fff;font-size:10px;font-weight:800;padding:1px 6px;border-radius:9px}
@@ -1982,9 +1985,68 @@ async function viewDevolucionesProg() {
   renderProg();
 }
 
-function progDelDia(ref) {
+const progIso = x => { const y = x.getFullYear(), m = ('0' + (x.getMonth() + 1)).slice(-2), dd = ('0' + x.getDate()).slice(-2); return `${y}-${m}-${dd}`; };
+const progLunes = b => { const d = new Date(b); const wd = (d.getDay() + 6) % 7; d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - wd); return d; };
+
+// Devoluciones (no devueltas) dentro del rango seleccionado alrededor de la fecha base.
+function progDelRango(rango, ref) {
   const base = ref ? new Date(ref + 'T12:00:00') : new Date();
-  return PROG.rows.filter(r => { if (r.devuelto) return false; const t = r.prog_devolucion; if (!t) return false; return new Date(t).toDateString() === base.toDateString(); });
+  return PROG.rows.filter(r => {
+    if (r.devuelto) return false; const t = r.prog_devolucion; if (!t) return false;
+    const d = new Date(t);
+    if (rango === 'dia') return d.toDateString() === base.toDateString();
+    if (rango === 'semana') { const a = progLunes(base); const b = new Date(a); b.setDate(a.getDate() + 7); return d >= a && d < b; }
+    return d.getFullYear() === base.getFullYear() && d.getMonth() === base.getMonth(); // mes
+  });
+}
+
+// Construye el eje y los carriles (swimlanes) según el rango. Apila las tarjetas que
+// comparten posición para que ninguna tape a otra; devuelve también la marca de "hoy".
+function progBuildTimeline(rango, base, set) {
+  const lanesCat = ['Cámaras', 'Iluminación', 'Sonido', 'Kits', 'Otros'];
+  const porLane = {}; lanesCat.forEach(l => porLane[l] = []);
+  set.forEach(r => porLane[laneCat(r.categoria)].push(r));
+  const hoy = new Date();
+  let axisHtml = '', axisCls = '', chipW, posOf, todayPos = null;
+
+  if (rango === 'dia') {
+    const AX0 = 8, AX1 = 19, SPAN = AX1 - AX0;
+    for (let x = AX0; x <= AX1; x++) axisHtml += `<span>${('0' + x).slice(-2)}:00</span>`;
+    chipW = 11;
+    posOf = r => { const dt = new Date(r.prog_devolucion); const hh = dt.getHours() + dt.getMinutes() / 60; return Math.max(0, Math.min(100 - chipW, (hh - AX0) / SPAN * 100)); };
+    if (!PROG.ref || PROG.ref === progIso(hoy)) { const hh = hoy.getHours() + hoy.getMinutes() / 60; if (hh >= AX0 && hh <= AX1) todayPos = (hh - AX0) / SPAN * 100; }
+  } else if (rango === 'semana') {
+    axisCls = 'cols';
+    const mon = progLunes(base); const days = [];
+    for (let i = 0; i < 7; i++) { const d = new Date(mon); d.setDate(mon.getDate() + i); days.push(d); }
+    axisHtml = days.map(d => `<span class="c">${cap(d.toLocaleDateString('es-CL', { weekday: 'short' }).replace('.', ''))} ${d.getDate()}</span>`).join('');
+    const colW = 100 / 7, gap = 2; chipW = colW - gap;
+    const idxOf = r => { const dd = new Date(r.prog_devolucion); return Math.round((new Date(dd.getFullYear(), dd.getMonth(), dd.getDate()) - mon) / 86400000); };
+    posOf = r => idxOf(r) * colW + gap / 2;
+    const ti = days.findIndex(d => d.toDateString() === hoy.toDateString()); if (ti >= 0) todayPos = ti * colW + colW / 2;
+  } else { // mes
+    axisCls = 'cols';
+    const y = base.getFullYear(), m = base.getMonth(); const ult = new Date(y, m + 1, 0).getDate();
+    const weeks = []; for (let s = 1; s <= ult; s += 7) weeks.push([s, Math.min(s + 6, ult)]);
+    const nW = weeks.length; axisHtml = weeks.map(w => `<span class="c">${w[0]}–${w[1]}</span>`).join('');
+    const colW = 100 / nW, gap = 2; chipW = colW - gap;
+    const widxOf = r => { const dd = new Date(r.prog_devolucion); return Math.floor((dd.getDate() - 1) / 7); };
+    posOf = r => widxOf(r) * colW + gap / 2;
+    if (hoy.getFullYear() === y && hoy.getMonth() === m) { const th = Math.floor((hoy.getDate() - 1) / 7); todayPos = th * colW + colW / 2; }
+  }
+
+  const laneHtml = lanesCat.map(l => {
+    const items = porLane[l].slice().sort((a, b) => posOf(a) - posOf(b));
+    const rowsEnd = [];
+    const placed = items.map(r => { const left = posOf(r); let row = 0; while (row < rowsEnd.length && rowsEnd[row] > left + 0.3) row++; rowsEnd[row] = left + chipW; return { r, left, row }; });
+    const nRows = Math.max(1, rowsEnd.length); const H = nRows * 28 + 8;
+    const chips = placed.map(({ r, left, row }) => { const st = progEstado(r); const [c, bg, ck] = PROG_EST[st];
+      const nm = (r.estudiante || '—').split(' '); const corto = nm[0] + (nm[1] ? ' ' + nm[1][0] + '.' : '');
+      return `<div class="ev" data-cod="${escD(r.cod)}" style="top:${row * 28 + 4}px;left:${left}%;width:${chipW}%;background:${bg};border-color:${c};color:${c}" title="${escD(r.estudiante)} · ${fFechaHora(r.prog_devolucion)}"><span class="ck">${ck}</span>${escD(corto)}</div>`; }).join('');
+    return `<div class="lane" style="height:${H}px"><div class="lb">${LANE_IC[l]} ${l} (${items.length})</div><div class="track">${chips}</div></div>`;
+  }).join('');
+
+  return { axisHtml, axisCls, laneHtml, todayPos };
 }
 
 function renderProg() {
@@ -1992,33 +2054,19 @@ function renderProg() {
   const base = P.ref ? new Date(P.ref + 'T12:00:00') : new Date();
   const isoDay = x => { const y = x.getFullYear(), m = ('0' + (x.getMonth() + 1)).slice(-2), dd = ('0' + x.getDate()).slice(-2); return `${y}-${m}-${dd}`; };
   const sede = (ME.sedes && (ME.sedes.find(s => s.id === SEDE) || {}).nombre) || 'Sede activa';
-  const delDia = progDelDia(P.ref);
+  const lanesCat = ['Cámaras', 'Iluminación', 'Sonido', 'Kits', 'Otros'];
+  const set = progDelRango(P.rango, P.ref);
 
-  // ----- Resumen del día por estado -----
+  // ----- Resumen del rango por estado -----
   const cnt = { confirmada: 0, proceso: 0, programada: 0, reprogramada: 0, atrasada: 0 };
-  delDia.forEach(r => cnt[progEstado(r)]++);
-  const totDia = delDia.length || 0;
+  set.forEach(r => cnt[progEstado(r)]++);
+  const totDia = set.length || 0;
   const pct = n => totDia ? Math.round(n / totDia * 100) : 0;
   const miniLine = (st, label) => { const [c] = PROG_EST[st]; return `<div class="mini"><span class="dot" style="background:${c}"></span>${label} <b style="margin-left:auto">${cnt[st]} <small style="color:#94a3b8">(${pct(cnt[st])}%)</small></b></div>`; };
 
-  // ----- Swimlanes por categoría -----
-  const AX0 = 8, AX1 = 19, SPAN = AX1 - AX0;
-  const pos = t => { const dt = new Date(t); const hh = dt.getHours() + dt.getMinutes() / 60; return Math.max(0, Math.min(97, (hh - AX0) / SPAN * 100)); };
-  const ejes = []; for (let x = AX0; x <= AX1; x++) ejes.push(('0' + x).slice(-2) + ':00');
-  const lanesCat = ['Cámaras', 'Iluminación', 'Sonido', 'Kits', 'Otros'];
-  const porLane = {}; lanesCat.forEach(l => porLane[l] = []);
-  delDia.forEach(r => porLane[laneCat(r.categoria)].push(r));
-  const laneHtml = lanesCat.map(l => {
-    const items = porLane[l];
-    const chips = items.map(r => { const st = progEstado(r); const [c, bg, ck] = PROG_EST[st]; const left = pos(r.prog_devolucion);
-      const nm = (r.estudiante || '—').split(' '); const corto = nm[0] + (nm[1] ? ' ' + nm[1][0] + '.' : '');
-      return `<div class="ev" data-cod="${escD(r.cod)}" style="left:${left}%;background:${bg};border-color:${c};color:${c}" title="${escD(r.estudiante)} · ${fmtHora(r.prog_devolucion)}"><span class="ck">${ck}</span>${escD(corto)}${st === 'atrasada' ? ' (atrasada)' : ''}</div>`; }).join('');
-    const now = new Date(); const esHoy = !P.ref || P.ref === isoDay(new Date());
-    return `<div class="lane"><div class="lb">${LANE_IC[l]} ${l} (${items.length})</div><div class="track">${chips}</div></div>`;
-  }).join('');
-  const now = new Date(); const nh = now.getHours() + now.getMinutes() / 60;
-  const esHoy = !P.ref || P.ref === isoDay(new Date());
-  const nowMark = (esHoy && nh >= AX0 && nh <= AX1) ? `<div class="nowl" style="left:calc(96px + ${pos(now)}% * (100% - 96px) / 100)"><span class="pin">${fmtHora(now)}</span></div>` : '';
+  // ----- Línea de tiempo (swimlanes) sensible al rango -----
+  const TL = progBuildTimeline(P.rango, base, set);
+  const nowMark = TL.todayPos != null ? `<div class="nowl" style="left:calc(96px + ${TL.todayPos}% * (100% - 96px) / 100)"><span class="pin">${P.rango === 'dia' ? fmtHora(new Date()) : 'Hoy'}</span></div>` : '';
 
   // ----- Leyenda -----
   const leg = Object.keys(PROG_EST).map(st => { const [c, bg, ic, lbl, sub] = PROG_EST[st]; return `<div class="li"><span class="ic" style="background:${bg};color:${c}">${ic}</span><div><b>${lbl}</b><small>${sub}</small></div></div>`; }).join('');
@@ -2040,10 +2088,14 @@ function renderProg() {
       <select class="sede"><option>📍 ${escD(sede)}</option></select>
     </div>
     <div class="tlwrap">
-      <div class="today"><div class="wd">${cap(base.toLocaleDateString('es-CL', { weekday: 'long' }))}</div><div class="d">${base.getDate()}</div><div class="wd">${cap(base.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' }))}</div>
+      <div class="today">${(() => {
+        if (P.rango === 'dia') return `<div class="wd">${cap(base.toLocaleDateString('es-CL', { weekday: 'long' }))}</div><div class="d">${base.getDate()}</div><div class="wd">${cap(base.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' }))}</div>`;
+        if (P.rango === 'semana') { const mon = progLunes(base), dom = new Date(mon); dom.setDate(mon.getDate() + 6); return `<div class="wd">Semana</div><div class="d" style="font-size:20px;line-height:1.2">${mon.getDate()} ${mon.toLocaleDateString('es-CL', { month: 'short' }).replace('.', '')} – ${dom.getDate()} ${dom.toLocaleDateString('es-CL', { month: 'short' }).replace('.', '')}</div><div class="wd">${cap(base.toLocaleDateString('es-CL', { year: 'numeric' }))}</div>`; }
+        return `<div class="wd">Mes</div><div class="d" style="font-size:23px">${cap(base.toLocaleDateString('es-CL', { month: 'long' }))}</div><div class="wd">${base.getFullYear()}</div>`;
+      })()}
         <div style="border-top:1px solid #eef1f5;margin:10px 0 6px;padding-top:8px;font-size:11px;color:#64748b">Devoluciones programadas</div><div class="big">${totDia}</div>
-        ${miniLine('confirmada', 'Confirmadas')}${miniLine('proceso', 'En proceso')}${miniLine('reprogramada', 'Reprogramadas')}${miniLine('atrasada', 'Atrasadas')}</div>
-      <div class="lanes"><div class="axis">${ejes.map(e => `<span>${e}</span>`).join('')}</div>${laneHtml}${nowMark}</div>
+        ${miniLine('confirmada', 'Confirmadas')}${miniLine('proceso', 'En proceso')}${miniLine('programada', 'Programadas')}${miniLine('reprogramada', 'Reprogramadas')}${miniLine('atrasada', 'Atrasadas')}</div>
+      <div class="lanes"><div class="axis ${TL.axisCls}">${TL.axisHtml}</div>${TL.laneHtml}${nowMark}</div>
       <div class="leg"><h4>Leyenda de estados</h4>${leg}</div>
     </div>
     <div class="filt"><div class="ft">🔽 Filtros</div>
