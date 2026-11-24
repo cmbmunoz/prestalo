@@ -618,6 +618,19 @@ async function viewInventarioDash(rango = 'hoy', modo = 'programadas', ref = nul
   const prog = (lb, n) => `<div class="prog"><div class="t"><span>📅 ${lb}</span><b>${n} entregas</b></div><div class="track"><div class="fill" style="width:${Math.round(n / maxProg * 100)}%"></div></div></div>`;
   const kpi = (cls, mod, ic, lb, vl, sb) => `<div class="kpi ${cls} ${modo === mod ? 'sel' : ''}" data-modo="${mod}"><div class="ico">${ic}</div><div><div class="lb">${lb}</div><div class="vl">${vl}</div><div class="sb">${sb}</div></div><span class="chev">›</span></div>`;
 
+  // Panel «En revisión» (post-devolución): aparece solo si hay equipos en ese estado.
+  const enRev = Array.isArray(d.en_revision) ? d.en_revision : [];
+  const minsRest = t => { if (!t) return null; const m = Math.ceil((new Date(t).getTime() - Date.now()) / 60000); return m; };
+  const enRevHtml = enRev.length ? `
+    <div class="pnl" style="margin-bottom:14px;border-left:4px solid #7c3aed">
+      <h3>🔎 En revisión <span style="font-weight:500;color:#6b7280;font-size:13px">(${enRev.length} · liberación automática a los 60 min)</span></h3>
+      <div style="overflow-x:auto"><table class="erv"><thead><tr><th>Equipo</th><th>Categoría</th><th>Restante</th><th></th></tr></thead><tbody>${
+        enRev.map(e => { const m = minsRest(e.fecha_fin_revision); const lbl = m === null ? '—' : (m <= 0 ? 'liberando…' : m + ' min');
+          return `<tr><td>${escD(e.equipo)}</td><td>${escD(e.categoria || '')}</td><td style="white-space:nowrap">⏳ ${lbl}</td>
+            <td style="text-align:right"><button class="ab pri liberar" data-id="${e.id}">Liberar ahora</button></td></tr>`; }).join('')
+      }</tbody></table></div>
+    </div>` : '';
+
   $('#invDash').innerHTML = `
     <div class="ihead">
       <div><h1>Control de Inventario</h1><p>Gestión operativa de equipos, reservas y entregas del pañol</p></div>
@@ -641,6 +654,7 @@ async function viewInventarioDash(rango = 'hoy', modo = 'programadas', ref = nul
         ${timelineHTML}
       </div>
     </div>
+    ${enRevHtml}
     <div class="filt">
       <div class="ft">🔽 Filtros</div>
       <div class="fg"><label>Sede</label><select id="fSede"><option>${escD((ME.sedes && (ME.sedes.find(s => s.id === SEDE) || {}).nombre) || 'Sede activa')}</option></select></div>
@@ -724,6 +738,12 @@ async function viewInventarioDash(rango = 'hoy', modo = 'programadas', ref = nul
   $('#fModo').onchange = () => { modo = $('#fModo').value; DASHVIEW.modo = modo; $('#invDash').querySelectorAll('.kpi').forEach(k => k.classList.toggle('sel', k.dataset.modo === modo)); renderTabla(); };
   $('#tSrch').oninput = renderTabla;
   $('#fClear').onclick = () => { modo = 'programadas'; DASHVIEW.modo = modo; $('#fModo').value = 'programadas'; $('#tSrch').value = ''; $('#invDash').querySelectorAll('.kpi').forEach(k => k.classList.remove('sel')); renderTabla(); };
+  // Liberar equipo «En revisión» (Jefe de Pañol)
+  $('#invDash').querySelectorAll('.liberar').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { await api('/equipos/' + b.dataset.id + '/liberar', { method: 'POST' }); toast('Equipo liberado'); reloadDash(); }
+    catch (e) { b.disabled = false; toast(e.message || 'No se pudo liberar', true); }
+  });
   $('#fModo').value = modo;
   if (silent && prevSrch && $('#tSrch')) $('#tSrch').value = prevSrch;
   renderTabla();

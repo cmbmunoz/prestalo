@@ -403,6 +403,9 @@ app.post('/api/reservas', auth, requireRole('alumno', 'docente'), wrap(async (re
   // Equipo pasa a reservado
   await db.query(`UPDATE equipo SET estado='reservado' WHERE id=$1`, [equipo_id]);
 
+  await notificar({ usuario_rut: req.user.rut, tipo: 'reserva', asunto: 'Confirmación de reserva',
+    mensaje: estado === 'confirmada' ? 'Tu reserva quedó confirmada.' : 'Tu reserva fue registrada y quedó pendiente de autorización.' });
+
   res.status(201).json({
     id: r.id, estado,
     mensaje: esRecinto
@@ -670,7 +673,12 @@ app.post('/api/entregar', auth, requireRole(...OPERACION), wrap(async (req, res)
      VALUES ($1,$2,$3,$4,$5,'abierto') RETURNING id`,
     [r.id, r.usuario_rut, equipoId, req.user.rut, condicion_salida || eq.condicion])).rows[0];
   await db.query(`UPDATE reserva SET estado='en_uso' WHERE id=$1`, [r.id]);
-  await db.query(`UPDATE equipo SET estado='prestado' WHERE id=$1`, [equipoId]);
+  // Tasa de uso: contador por unidad (asignación automática). Fallback si aún no migra.
+  try {
+    await db.query(`UPDATE equipo SET estado='prestado', usos_acumulados=COALESCE(usos_acumulados,0)+1 WHERE id=$1`, [equipoId]);
+  } catch (e) { await db.query(`UPDATE equipo SET estado='prestado' WHERE id=$1`, [equipoId]); }
+  await notificar({ usuario_rut: r.usuario_rut, tipo: 'entrega', asunto: 'Confirmación de entrega',
+    mensaje: 'Confirmamos la entrega de tu equipo.' });
   res.status(201).json({ id: p.id, mensaje: 'Entrega registrada' });
 }));
 
@@ -790,8 +798,18 @@ app.get('/api/panol/dashboard', auth, requireRole(...OPERACION), wrap(async (req
        ORDER BY disponibles, c.nombre`, [sede])).rows;
   } catch (e) { /* tolerante */ }
 
+  // Equipos «En revisión» (post-devolución) — para liberar manualmente si corresponde
+  let en_revision = [];
+  try {
+    en_revision = (await db.query(
+      `SELECT q.id, q.nombre AS equipo, c.nombre AS categoria, q.fecha_fin_revision
+       FROM equipo q JOIN categoria c ON c.id=q.categoria_id
+       WHERE q.entidad_id=$1 AND q.estado='en_revision'
+       ORDER BY q.fecha_fin_revision NULLS LAST`, [sede])).rows;
+  } catch (e) { /* columna/enum aún sin migrar */ }
+
   res.json({ rango, ref, reservas_pendientes, entregas_hoy, devoluciones_hoy, alertas_stock,
-    prog_hoy, prog_semana, prog_mes, entregas, reservas_pend, devoluciones, entregadas_hoy, stock_bajo });
+    prog_hoy, prog_semana, prog_mes, entregas, reservas_pend, devoluciones, entregadas_hoy, stock_bajo, en_revision });
 }));
 
 // Historial de entregas (préstamos) de la sede.
@@ -959,23 +977,97 @@ app.post('/api/recibir', auth, requireRole(...OPERACION), wrap(async (req, res) 
             requiere_reposicion=$3, observacion=$4 WHERE id=$1`,
     [p.id, condicion_retorno || 'bueno', danio, observacion || null]);
   await db.query(`UPDATE reserva SET estado='completada' WHERE id=$1`, [p.reserva_id]);
-  // Equipo: a mantención si hay daño, si no disponible
-  await db.query(`UPDATE equipo SET estado=$2, condicion=$3 WHERE id=$1`,
-    [p.equipo_id, danio ? 'mantencion' : 'disponible', condicion_retorno || 'bueno']);
 
-  let sancion = null;
+  // Equipo: con daño → mantención; sin daño → «En revisión» por N minutos (liberación
+  // automática o manual por el Jefe de Pañol). Si la migración aún no está, cae a 'disponible'.
   if (danio) {
-    const fin = new Date(); fin.setDate(fin.getDate() + 30); // bloqueo 1 mes por daño (RF-59)
+    await db.query(`UPDATE equipo SET estado='mantencion', condicion=$2 WHERE id=$1`,
+      [p.equipo_id, condicion_retorno || 'bueno']);
+  } else {
+    let minRev = 60;
+    try {
+      const cfg = (await db.query(
+        `SELECT e.minutos_revision FROM entidad e JOIN equipo q ON q.entidad_id=e.id WHERE q.id=$1`,
+        [p.equipo_id])).rows[0];
+      if (cfg && Number.isFinite(Number(cfg.minutos_revision))) minRev = Number(cfg.minutos_revision);
+    } catch (e) { if (e.code !== '42703') throw e; }
+    try {
+      await db.query(
+        `UPDATE equipo SET estado='en_revision', condicion=$2,
+                fecha_fin_revision = now() + ($3 || ' minutes')::interval WHERE id=$1`,
+        [p.equipo_id, condicion_retorno || 'bueno', String(minRev)]);
+    } catch (e) {
+      await db.query(`UPDATE equipo SET estado='disponible', condicion=$2 WHERE id=$1`,
+        [p.equipo_id, condicion_retorno || 'bueno']);
+    }
+  }
+
+  let sancion = null, bloqueo = null;
+  if (danio) {
+    // Daño → bloqueo indefinido hasta resolución del caso (observaciones nov-2026)
     const s = (await db.query(
-      `INSERT INTO sancion (usuario_rut, motivo, tramo, fecha_fin, vigente)
-       VALUES ($1,$2,'grave',$3,TRUE) RETURNING id`,
-      [p.usuario_rut, 'Equipo devuelto con daño — bloqueo hasta reposición', fin])).rows[0];
+      `INSERT INTO sancion (usuario_rut, reserva_id, motivo, tramo, fecha_fin, vigente)
+       VALUES ($1,$2,$3,'grave',$4,TRUE) RETURNING id`,
+      [p.usuario_rut, p.reserva_id, 'Equipo devuelto con daño — bloqueo indefinido hasta resolución del caso',
+       new Date(2999, 11, 31)])).rows[0];
     await db.query(
       `INSERT INTO mantencion (equipo_id, tipo, detalle) VALUES ($1,'reposicion',$2)`,
       [p.equipo_id, observacion || 'Daño detectado en devolución']);
     sancion = s.id;
+    await notificar({ usuario_rut: p.usuario_rut, tipo: 'dano', asunto: 'Reporte de daños u observaciones',
+      mensaje: 'Se registró un daño/observación en la devolución. El equipo queda bloqueado hasta la resolución del caso.' });
   }
-  res.json({ ok: true, requiere_reposicion: danio, sancion });
+
+  // Bloqueos automáticos escalados por atraso (a nivel de grupo)
+  try {
+    const rr = p.reserva_id ? (await db.query(`SELECT fecha_fin FROM reserva WHERE id=$1`, [p.reserva_id])).rows[0] : null;
+    const prog = rr && rr.fecha_fin ? new Date(rr.fecha_fin) : null;
+    const hAtraso = prog ? (Date.now() - prog.getTime()) / 3600000 : 0;
+    if (hAtraso > 1) {
+      const prev = (await db.query(
+        `SELECT count(*)::int n FROM sancion WHERE usuario_rut=$1 AND motivo ILIKE 'Atraso%'`, [p.usuario_rut])).rows[0].n;
+      let dias, tramo, etiqueta;
+      if (hAtraso > 4 || prev >= 2) { dias = null; tramo = 'grave'; etiqueta = 'resto del semestre'; }
+      else if (hAtraso > 2) { dias = 14; tramo = 'medio'; etiqueta = '2 semanas'; }
+      else { dias = 7; tramo = 'leve'; etiqueta = '1 semana'; }
+      const fin = dias === null ? finSemestre() : (() => { const x = new Date(); x.setDate(x.getDate() + dias); return x; })();
+      const motivo = `Atraso en devolución (${hAtraso.toFixed(1)} h) — bloqueo ${etiqueta}`;
+      const miembros = p.reserva_id
+        ? (await db.query(
+            `SELECT DISTINCT COALESCE(i.usuario_rut, u.rut) AS rut
+             FROM integrante i LEFT JOIN usuario u ON u.rut=i.rut
+             WHERE i.reserva_id=$1 AND COALESCE(i.usuario_rut, u.rut) IS NOT NULL`, [p.reserva_id])).rows.map(x => x.rut)
+        : [];
+      if (!miembros.includes(p.usuario_rut)) miembros.push(p.usuario_rut);
+      for (const rut of miembros) {
+        await db.query(
+          `INSERT INTO sancion (usuario_rut, reserva_id, motivo, tramo, fecha_fin, solidaria, vigente)
+           VALUES ($1,$2,$3,$4,$5,TRUE,TRUE)`, [rut, p.reserva_id, motivo, tramo, fin]);
+      }
+      bloqueo = { etiqueta, grupo: miembros.length };
+      await notificar({ usuario_rut: p.usuario_rut, tipo: 'atraso', asunto: 'Entrega atrasada', mensaje: motivo });
+    }
+  } catch (e) { if (!['42703', '42P01'].includes(e.code)) console.log('[bloqueo atraso]', e.code || e.message); }
+
+  // Notificación de devolución (al estudiante)
+  await notificar({ usuario_rut: p.usuario_rut, tipo: 'devolucion', asunto: 'Confirmación de devolución',
+    mensaje: 'Registramos la devolución de tu equipo.' });
+
+  res.json({ ok: true, requiere_reposicion: danio, sancion, bloqueo });
+}));
+
+// Liberar manualmente un equipo «En revisión» (Jefe de Pañol / operación)
+app.post('/api/equipos/:id/liberar', auth, requireRole(...OPERACION), wrap(async (req, res) => {
+  try {
+    const r = await db.query(
+      `UPDATE equipo SET estado='disponible', fecha_fin_revision=NULL
+       WHERE id=$1 AND entidad_id=$2 AND estado='en_revision' RETURNING id`, [req.params.id, req.sede]);
+    if (!r.rows.length) return res.status(409).json({ error: 'El equipo no está en revisión' });
+    res.json({ ok: true });
+  } catch (e) {
+    if (['42703', '22P02'].includes(e.code)) return res.status(409).json({ error: 'Función no disponible (migración pendiente)' });
+    throw e;
+  }
 }));
 
 // ----------------------- Autorizaciones (recintos) -----------------------
@@ -1229,11 +1321,54 @@ async function expirarNoShow() {
        AND r.justificada = FALSE
        AND r.fecha_inicio < now() - interval '1 hour'
        AND NOT EXISTS (SELECT 1 FROM prestamo p WHERE p.reserva_id = r.id)
-     RETURNING r.id, r.equipo_id`);
-  for (const row of exp.rows)
+     RETURNING r.id, r.equipo_id, r.usuario_rut`);
+  for (const row of exp.rows) {
     await db.query(`UPDATE equipo SET estado='disponible' WHERE id=$1 AND estado='reservado'`, [row.equipo_id]);
+    await notificar({ usuario_rut: row.usuario_rut, tipo: 'no_retiro', asunto: 'No retiro de equipos reservados',
+      mensaje: 'Tu reserva fue liberada por no retiro en el horario (no-show).' });
+  }
   if (exp.rows.length) console.log(`RF-56: ${exp.rows.length} reserva(s) expirada(s) por no-show`);
   return exp.rows.length;
+}
+
+// --- Liberación automática de equipos «En revisión» (observaciones nov-2026) ---
+// Tras la devolución el equipo queda «en_revision» por N minutos; aquí se libera
+// solo (el Jefe de Pañol también puede liberar manualmente antes).
+async function liberarEnRevision() {
+  try {
+    const r = await db.query(
+      `UPDATE equipo SET estado='disponible', fecha_fin_revision=NULL
+       WHERE estado='en_revision' AND fecha_fin_revision IS NOT NULL AND fecha_fin_revision <= now()
+       RETURNING id`);
+    if (r.rows.length) console.log(`En revisión: ${r.rows.length} equipo(s) liberado(s) automáticamente`);
+    return r.rows.length;
+  } catch (e) {
+    if (!['42703', '42P01', '22P02'].includes(e.code)) console.log('[liberarEnRevision]', e.code || e.message);
+    return 0;
+  }
+}
+
+// Fin del semestre académico (aprox.): 1er sem → 31-jul; 2do sem → 31-dic.
+function finSemestre(d = new Date()) {
+  const y = d.getFullYear();
+  return d.getMonth() <= 6 ? new Date(y, 6, 31) : new Date(y, 11, 31);
+}
+
+// --- Registro de notificaciones (estructura lista; envío real al activar SMTP) ---
+// Inserta una fila en 'notificacion'. Con SMTP configurado queda 'pendiente' de
+// envío; sin SMTP queda 'simulado' (se registra en el log). Nunca bloquea la operación.
+const SMTP_ON = !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+async function notificar({ usuario_rut, destinatario, tipo, asunto, mensaje }) {
+  if (!usuario_rut) return; // notificacion.usuario_rut es obligatorio (FK)
+  try {
+    await db.query(
+      `INSERT INTO notificacion (usuario_rut, canal, destinatario, asunto, mensaje, tipo, estado)
+       VALUES ($1,'correo',$2,$3,$4,$5,$6)`,
+      [usuario_rut, destinatario || null, asunto || null, mensaje, tipo, SMTP_ON ? 'pendiente' : 'simulado']);
+    if (!SMTP_ON) console.log(`[NOTIF ${tipo} → ${destinatario || usuario_rut}] ${asunto || ''}`);
+  } catch (e) {
+    if (!['42703', '42P01'].includes(e.code)) console.log('[notificar]', e.code || e.message);
+  }
 }
 
 // Justificar atraso (evita la expiración) — RF-56
@@ -2670,4 +2805,4 @@ app.post('/api/asistente', wrap(async (req, res) => {
   res.json({ respuesta: r.respuesta });
 }));
 
-module.exports = { app, expirarNoShow };
+module.exports = { app, expirarNoShow, liberarEnRevision };
