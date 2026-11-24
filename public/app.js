@@ -1915,8 +1915,15 @@ const DEVPROG_CSS = `
 .dprog .ptabs button.on{background:#0d9488;border-color:#0d9488;color:#fff}
 .dprog .ptabs button.on.r{background:#dc2626;border-color:#dc2626}
 .dprog .ptabs button.on.y{background:#d97706;border-color:#d97706}
-.dprog .pgrid{display:grid;grid-template-columns:minmax(0,1fr) 440px;gap:12px;align-items:start}
-@media(max-width:1200px){.dprog .pgrid{grid-template-columns:1fr}}
+.dprog .pgrid{display:grid;grid-template-columns:minmax(0,1fr) 520px;gap:12px;align-items:start}
+@media(max-width:1280px){.dprog .pgrid{grid-template-columns:1fr}}
+/* Detalle dividido en dos: info (izquierda) + flujo/línea de tiempo (derecha) */
+.dprog .dpcols{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+@media(max-width:560px){.dprog .dpcols{grid-template-columns:1fr}}
+.dprog .dpcols .col{min-width:0}
+.dprog .dpR{background:#f8fafc;border:1px solid #eef1f5;border-radius:10px;padding:12px}
+.dprog .dpR .stt{font-size:12px;font-weight:800;margin-bottom:10px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.dprog .dpR .stt .pill{font-size:10px}
 /* Flujo horizontal de la reserva (con el estado actual) */
 .dprog .hflow{display:flex;align-items:flex-start;background:#f8fafc;border:1px solid #eef1f5;border-radius:10px;padding:12px 8px}
 .dprog .hflow .st{flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:3px;text-align:center;min-width:0}
@@ -2136,8 +2143,8 @@ function renderProg() {
     </div>
     <div class="sug"><span class="t">🎯 Sugerencias operativas (hoy)</span>
       <span class="it">✅ ${atrasadas.length} devoluciones atrasadas · Gestionar primero</span>
-      <span class="it">📦 ${delDia.length} equipos del día · Priorizar recepción</span>
-      <span class="it">📊 Capacidad del pañol: ${Math.min(99, 60 + delDia.length)}%</span></div>`;
+      <span class="it">📦 ${set.length} equipos en el rango · Priorizar recepción</span>
+      <span class="it">📊 Capacidad del pañol: ${Math.min(99, 60 + set.length)}%</span></div>`;
 
   // Bindings
   $('#pBack').onclick = viewDevoluciones;
@@ -2225,34 +2232,37 @@ function renderProgDetail() {
   if (!r) { el.innerHTML = `<div class="dp"><div class="dh"><b>Detalle de devolución</b></div><div class="empty">Selecciona una devolución para ver su detalle, línea de tiempo y recomendaciones.</div></div>`; return; }
   const st = progEstado(r); const [c, bg, ic, lbl] = PROG_EST[st];
   const sede = (ME.sedes && (ME.sedes.find(s => s.id === SEDE) || {}).nombre) || 'Sede activa';
-  const step = (cls, t, sub) => `<div class="st ${cls}"><b>${t}</b><small>${sub}</small></div>`;
+  const entregado = !!r.fecha_salida;
+  // Etapa actual del flujo (la que está "en curso").
+  const actual = r.devuelto ? 'cierre' : entregado ? 'cierre' : 'entrega';
+  const vstep = (cls, t, sub) => `<div class="st ${cls}"><b>${t}</b><small>${sub}</small></div>`;
+  const timeline = `<div class="vt">
+      ${vstep('done', 'Reserva creada', fFechaHora(r.retiro) + (r.reserva_cod ? ' · ' + escD(r.reserva_cod) : ''))}
+      ${vstep(entregado ? 'done' : (actual === 'preparacion' ? 'now' : ''), 'Equipos preparados', entregado ? 'Listos para entrega' : 'Pendiente')}
+      ${vstep(entregado ? 'done' : (actual === 'entrega' ? 'now' : ''), 'Equipos entregados', entregado ? fFechaHora(r.fecha_salida) + (r.panolero ? ' · ' + escD(r.panolero) : '') : 'Pendiente')}
+      ${vstep(r.devuelto ? 'done' : 'now', 'Devolución programada', fFechaHora(r.prog_devolucion))}
+      ${vstep(r.devuelto ? 'done' : '', 'Recepción y cierre', r.devuelto ? fFechaHora(r.fecha_retorno) : 'En curso')}
+    </div>`;
   el.innerHTML = `<div class="dp">
     <div class="dh"><b>Detalle de devolución</b><button class="x" id="pClose" style="border:0;background:transparent;font-size:18px;color:#94a3b8;cursor:pointer">×</button></div>
     <div class="top"><div class="ph2">${icon(r.categoria || r.equipo)}</div><div style="flex:1"><b>${escD(r.equipo || r.categoria || '—')}</b><small>Reserva ${escD(r.reserva_cod || r.cod)}</small></div><span class="pill" style="background:${bg};color:${c}">${ic} ${lbl}</span></div>
-    <div class="sh">📄 Información de la reserva</div>
-    <div class="kv"><span class="i">👤</span>${escD(r.estudiante || '—')}</div>
-    <div class="kv"><span class="i">📘</span>${escD(r.asignatura || r.categoria || '—')}</div>
-    <div class="kv"><span class="i">📅</span>Retiro: ${fFechaHora(r.retiro || r.fecha_salida)}</div>
-    <div class="kv"><span class="i">↩️</span><span class="hl">Devolución programada: ${fFechaHora(r.prog_devolucion)}</span></div>
-    <div class="kv"><span class="i">📍</span>Sede: ${escD(sede)}</div>
-    <div class="sh">📦 Equipamiento y accesorios esperados</div>
-    <div class="eqrow"><span>${escD(r.equipo || r.categoria || '—')}${r.n_serie ? ' · ' + escD(r.n_serie) : ''}</span><b>1</b></div>
-    ${r.modelo ? `<div class="eqrow"><span style="color:#64748b">Modelo: ${escD(r.modelo)}</span><span></span></div>` : ''}
-    <div class="sh">🔄 Flujo de la reserva <span style="font-weight:600;color:#64748b">· ${lbl}</span></div>
-    ${(() => {
-      const entregado = !!r.fecha_salida;
-      const hs = (cls, ico, t, fecha, nota) => `<div class="st ${cls}"><div class="c">${ico}${cls === 'done' ? `<span class="chk ${cls === 'now' ? 'b' : ''}">✓</span>` : ''}</div><div class="t">${t}</div><div class="d">${fecha || '—'}${nota ? '<br>' + nota : ''}</div></div>`;
-      const ln = done => `<div class="ln ${done ? '' : 'pend'}"></div>`;
-      return `<div class="hflow">
-        ${hs('done', '📅', 'Reserva', fFechaHora(r.retiro), escD(r.reserva_cod || ''))}
-        ${ln(entregado)}
-        ${hs(entregado ? 'done' : 'pend', '📦', 'Preparación', entregado ? fFechaHora(r.fecha_salida) : '—', 'Equipos preparados')}
-        ${ln(entregado)}
-        ${hs(entregado ? 'done' : 'pend', '🤝', 'Entrega', entregado ? fFechaHora(r.fecha_salida) : '—', entregado ? escD(r.cod) : 'Pendiente')}
-        ${ln(r.devuelto)}
-        ${hs(r.devuelto ? 'done' : 'now', '🏁', 'Cierre', r.devuelto ? fFechaHora(r.fecha_retorno) : '—', r.devuelto ? 'Cerrada' : 'En curso')}
-      </div>`;
-    })()}
+    <div class="dpcols">
+      <div class="col dpL">
+        <div class="sh">📄 Información de la reserva</div>
+        <div class="kv"><span class="i">👤</span>${escD(r.estudiante || '—')}</div>
+        <div class="kv"><span class="i">📘</span>${escD(r.asignatura || r.categoria || '—')}</div>
+        <div class="kv"><span class="i">📅</span>Retiro: ${fFechaHora(r.retiro || r.fecha_salida)}</div>
+        <div class="kv"><span class="i">↩️</span><span class="hl">Devolución programada: ${fFechaHora(r.prog_devolucion)}</span></div>
+        <div class="kv"><span class="i">📍</span>Sede: ${escD(sede)}</div>
+        <div class="sh">📦 Equipamiento y accesorios esperados</div>
+        <div class="eqrow"><span>${escD(r.equipo || r.categoria || '—')}${r.n_serie ? ' · ' + escD(r.n_serie) : ''}</span><b>1</b></div>
+        ${r.modelo ? `<div class="eqrow"><span style="color:#64748b">Modelo: ${escD(r.modelo)}</span><span></span></div>` : ''}
+      </div>
+      <div class="col dpR">
+        <div class="stt">🕒 Línea de tiempo <span class="pill" style="background:${bg};color:${c}">${ic} ${lbl}</span></div>
+        ${timeline}
+      </div>
+    </div>
     <div class="sh">✨ Recomendaciones de priorización</div>
     <div class="rec">
       ${st === 'atrasada' ? '<div class="r">⚠️ Devolución atrasada: contactar al estudiante.</div>' : '<div class="r">✓ Equipo con alta demanda: priorizar recepción.</div>'}
