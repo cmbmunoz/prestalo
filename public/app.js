@@ -742,10 +742,12 @@ const ENTP_CSS = `
 .entp .seg{display:flex;background:#eef1f5;border-radius:10px;padding:4px}
 .entp .seg button{border:0;background:transparent;padding:8px 20px;border-radius:8px;font-weight:700;font-size:13px;color:#475569;cursor:pointer}
 .entp .seg button.on{background:#0d9488;color:#fff}
-.entp .cal .caltop{display:flex;justify-content:flex-start;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px}
-.entp .cal .nav{display:flex;align-items:center;gap:10px;font-weight:800;font-size:14px}
-.entp .cal .nav button{width:36px;height:36px;border:1px solid #e6e9ef;background:#fff;border-radius:9px;cursor:pointer;font-size:16px;color:#334155;display:flex;align-items:center;justify-content:center}
-.entp .cal .nav .mlab{font-weight:800;font-size:14px;white-space:nowrap}
+.entp .cal .caltop{display:flex;flex-direction:column;align-items:center;gap:10px;margin-bottom:12px}
+.entp .cal .nav{display:flex;align-items:center;justify-content:center;gap:10px;font-weight:800;font-size:14px;max-width:100%}
+.entp .cal .nav button{width:36px;height:36px;flex:0 0 auto;border:1px solid #e6e9ef;background:#fff;border-radius:9px;cursor:pointer;font-size:16px;color:#334155;display:flex;align-items:center;justify-content:center}
+.entp .cal .nav .mlab{font-weight:800;font-size:14px;text-align:center;min-width:0}
+.entp .cal .seg{width:100%;justify-content:center}
+.entp .cal .seg button{flex:1;text-align:center}
 .entp .vt{position:relative;border-top:1px solid #eef1f5;padding-top:6px}
 .entp .vt .hr{position:absolute;left:0;right:0;border-top:1px dashed #eef1f5;font-size:10.5px;color:#9aa3af;padding-left:2px}
 .entp .vt .ev{position:absolute;border-radius:10px;padding:8px 11px;background:#fff;color:#1f2937;box-shadow:0 1px 3px rgba(0,0,0,.08);overflow:hidden;cursor:pointer;border:1px solid #eef1f5;border-left:5px solid #94a3b8}
@@ -1096,20 +1098,19 @@ function viewEntregasPlan(rango = 'hoy', ref = null, keep = null, opts = {}) {
     bindCenter();
     $('#epRoot').querySelectorAll('#epNext .nextit').forEach(b => b.onclick = () => selectIdx(Number(b.dataset.i)));
     // Tabs Día / Semana / Mes (la semana/el mes parten en la fecha actual).
-    $('#epRoot').querySelectorAll('.cal .seg button').forEach(b => b.onclick = () => viewEntregasPlan(b.dataset.r, null));
-    // Calendario: elegir la semana / el mes.
-    if ($('#epRef')) $('#epRef').onchange = () => { if ($('#epRef').value) viewEntregasPlan(rango, $('#epRef').value, { filtro }); };
+    // Actualización silenciosa (sin "Cargando…"): mantiene la vista actual hasta que llegan los datos.
+    $('#epRoot').querySelectorAll('.cal .seg button').forEach(b => b.onclick = () => viewEntregasPlan(b.dataset.r, null, null, { silent: true }));
     // Navegación ‹ › (día ±1, semana ±7, mes ±1).
-    const shift = dir => { const x = new Date(baseD); if (rango === 'mes') x.setMonth(x.getMonth() + dir); else x.setDate(x.getDate() + dir * (rango === 'semana' ? 7 : 1)); viewEntregasPlan(rango, isoDay(x), { filtro }); };
+    const shift = dir => { const x = new Date(baseD); if (rango === 'mes') x.setMonth(x.getMonth() + dir); else x.setDate(x.getDate() + dir * (rango === 'semana' ? 7 : 1)); viewEntregasPlan(rango, isoDay(x), { filtro }, { silent: true }); };
     if ($('#epPrev')) $('#epPrev').onclick = () => shift(-1);
     if ($('#epNext2')) $('#epNext2').onclick = () => shift(1);
-    if ($('#epHoy')) $('#epHoy').onclick = () => viewEntregasPlan('hoy', null);
+    if ($('#epHoy')) $('#epHoy').onclick = () => viewEntregasPlan('hoy', null, null, { silent: true });
     if ($('#epAuto')) $('#epAuto').onclick = proponerPlan;
     // Filtros de alertas operativas (clic para filtrar, clic de nuevo para quitar).
     $('#epRoot').querySelectorAll('.alert[data-flt]').forEach(a => a.onclick = () => {
-      const f = a.dataset.flt; viewEntregasPlan(rango, ref, { keepId: E[sel] ? E[sel].id : null, filtro: filtro === f ? null : f });
+      const f = a.dataset.flt; viewEntregasPlan(rango, ref, { keepId: E[sel] ? E[sel].id : null, filtro: filtro === f ? null : f }, { silent: true });
     });
-    if ($('#epFltClr')) $('#epFltClr').onclick = () => viewEntregasPlan(rango, ref, { keepId: E[sel] ? E[sel].id : null, filtro: null });
+    if ($('#epFltClr')) $('#epFltClr').onclick = () => viewEntregasPlan(rango, ref, { keepId: E[sel] ? E[sel].id : null, filtro: null }, { silent: true });
     if (rango === 'hoy' && E.length && sel >= 0) renderEditor(); else renderEditorEmpty();
 
     // Panel activo + actualización automática/online (silenciosa) de los cambios de estado.
