@@ -190,6 +190,18 @@ const MENUS = {
              ['anuncios','📢','Anuncios'],['sedes','🏫','Sedes'],['respaldos','💾','Respaldos'],['manuales','❓','Ayuda'],['perfil','👤','Mi perfil']],
 };
 function firstView(rol) { const m = MENUS[rol].find(x => x[0] !== null); return m ? m[0] : null; }
+// Iconografía Material Symbols por clave de menú (rediseño M3). Si una clave no
+// está mapeada, se usa el emoji original como respaldo.
+const NAV_ICONS = {
+  catalogo: 'inventory_2', kits: 'category', asignaturas: 'school', reservas: 'event',
+  disponibilidad: 'calendar_month', solicitudes: 'front_hand', anuncios: 'campaign',
+  manuales: 'help', perfil: 'person', tareas: 'assignment', grupos: 'groups',
+  companeros: 'group', inventario: 'inventory_2', entregas_plan: 'local_shipping',
+  entregas_hist: 'receipt_long', recibir: 'assignment_return', equipos: 'handyman',
+  importar: 'upload_file', bloqueos: 'block', mantenciones: 'build', kpis: 'dashboard',
+  reportes: 'bar_chart', autoriz: 'verified', sanciones: 'gavel', usuarios: 'group',
+  academico: 'school', catalogos: 'folder_open', sedes: 'apartment', respaldos: 'backup',
+};
 function buildNav() {
   const nav = $('#nav'); nav.innerHTML = '';
   let firstDone = false;
@@ -197,7 +209,9 @@ function buildNav() {
     if (k === null) { const g = document.createElement('div'); g.className = 'nav-group'; g.textContent = label; nav.appendChild(g); return; }
     const b = document.createElement('button');
     b.dataset.key = k;
-    b.innerHTML = `<span class="ic">${ic}</span><span class="lb">${label}</span>`;
+    const sym = NAV_ICONS[k];
+    const icHtml = sym ? `<span class="ic material-symbols-outlined">${sym}</span>` : `<span class="ic">${ic}</span>`;
+    b.innerHTML = `${icHtml}<span class="lb">${label}</span>`;
     b.onclick = () => { nav.querySelectorAll('button').forEach(x => x.classList.remove('active')); b.classList.add('active'); render(k); };
     if (!firstDone) { b.classList.add('active'); firstDone = true; }
     nav.appendChild(b);
@@ -784,7 +798,7 @@ const ENTP_CSS = `
 .entp .badge.prep{background:#fff5e6;color:#b45309}.entp .badge.conf{background:#eafaf0;color:#16a34a}.entp .badge.atr{background:#fdeeee;color:#dc2626}
 .entp .seg{display:flex;background:#eef1f5;border-radius:10px;padding:4px}
 .entp .seg button{border:0;background:transparent;padding:8px 20px;border-radius:8px;font-weight:700;font-size:13px;color:#475569;cursor:pointer}
-.entp .seg button.on{background:#0d9488;color:#fff}
+.entp .seg button.on{background:#007A5E;color:#fff}
 .entp .cal .caltop{display:flex;flex-direction:column;align-items:center;gap:10px;margin-bottom:12px}
 .entp .cal .nav{display:flex;align-items:center;justify-content:center;gap:10px;font-weight:800;font-size:14px;max-width:100%}
 .entp .cal .nav button{width:36px;height:36px;flex:0 0 auto;border:1px solid #e6e9ef;background:#fff;border-radius:9px;cursor:pointer;font-size:16px;color:#334155;display:flex;align-items:center;justify-content:center}
@@ -1173,7 +1187,7 @@ const HIST_CSS = `
 @media(max-width:1000px){.hist .kpis{grid-template-columns:repeat(2,1fr)}}
 .hist .k{position:relative;border-radius:14px;padding:16px;border:1px solid #eceff4;display:flex;gap:12px;align-items:flex-start;cursor:pointer;transition:transform .08s}
 .hist .k:hover{transform:translateY(-1px)}
-.hist .k.sel{outline:3px solid #0d9488;outline-offset:1px}
+.hist .k.sel{outline:3px solid #007A5E;outline-offset:1px}
 .hist .k .ic{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;flex:0 0 auto}
 .hist .k .lb{font-size:12.5px;color:#475569;font-weight:600}
 .hist .k .vl{font-size:30px;font-weight:800;line-height:1.05;margin:2px 0}
@@ -1188,13 +1202,13 @@ const HIST_CSS = `
 .hist .filt .fg{display:flex;flex-direction:column;gap:3px;min-width:150px}
 .hist .filt .fg label{font-size:11px;color:#64748b}
 .hist .filt select,.hist .filt input{height:38px;box-sizing:border-box;border:1px solid #d7dce3;border-radius:9px;padding:8px 10px;font-size:13px;background:#fff;color:#0f172a;font-family:inherit;width:100%}
-.hist .filt .clr{margin-left:auto;color:#0d9488;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;padding-bottom:8px;white-space:nowrap}
+.hist .filt .clr{margin-left:auto;color:#007A5E;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;padding-bottom:8px;white-space:nowrap}
 .hist .tbar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
 .hist .tbar .srch{flex:1;min-width:220px;position:relative}
 .hist .tbar .srch input{width:100%;box-sizing:border-box;height:40px;border:1px solid #d7dce3;border-radius:10px;padding:8px 12px 8px 34px;font-size:13px;background:#fff;font-family:inherit}
 .hist .tbar .srch::before{content:"🔎";position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:13px;opacity:.6}
 .hist .tbar .b{height:40px;border:1px solid #d7dce3;background:#fff;border-radius:10px;padding:0 14px;font-size:13px;font-weight:700;cursor:pointer;color:#334155;display:flex;align-items:center;gap:7px}
-.hist .tbar .b.tl{background:#0d9488;border-color:#0d9488;color:#fff}
+.hist .tbar .b.tl{background:#007A5E;border-color:#007A5E;color:#fff}
 /* Tabla + panel de detalle al costado derecho (se apila en pantallas angostas). */
 .hist .grid{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:14px;align-items:start}
 @media(max-width:1150px){.hist .grid{grid-template-columns:1fr}}
@@ -1205,9 +1219,9 @@ const HIST_CSS = `
 .hist tbody td{padding:11px 12px;border-bottom:1px solid #f3f5f8;font-size:13px;color:#1f2937;vertical-align:middle}
 .hist tbody tr{cursor:pointer}
 .hist tbody tr:hover{background:#f8fafc}
-.hist tbody tr.sel{background:#e9f7f4;box-shadow:inset 3px 0 0 #0d9488}
+.hist tbody tr.sel{background:#e9f7f4;box-shadow:inset 3px 0 0 #007A5E}
 .hist .al b{display:block;font-weight:700}.hist .al small{color:#64748b;font-size:11.5px}
-.hist .rz{color:#0d9488;font-weight:700}
+.hist .rz{color:#007A5E;font-weight:700}
 .hist .eq{display:flex;align-items:center;gap:8px}
 .hist .eq .ei{width:26px;height:26px;border-radius:7px;background:#eef2f7;display:flex;align-items:center;justify-content:center;font-size:13px;flex:0 0 auto}
 .hist .fdt b{display:block;font-weight:600}.hist .fdt small{color:#94a3b8;font-size:11px}
@@ -1222,7 +1236,7 @@ const HIST_CSS = `
 .hist .pag{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px}
 .hist .pag .pg{display:flex;gap:4px;align-items:center}
 .hist .pag .pg button{min-width:32px;height:32px;border:1px solid #e6e9ef;background:#fff;border-radius:8px;cursor:pointer;font-size:12.5px;color:#334155;padding:0 8px}
-.hist .pag .pg button.on{background:#0d9488;border-color:#0d9488;color:#fff;font-weight:700}
+.hist .pag .pg button.on{background:#007A5E;border-color:#007A5E;color:#fff;font-weight:700}
 .hist .pag .pg button:disabled{opacity:.45;cursor:default}
 .hist .pag .mut{color:#64748b;font-size:12.5px}
 /* Panel de detalle lateral */
@@ -1244,21 +1258,21 @@ const HIST_CSS = `
 .hist .dp .eqi b{font-size:12.5px;display:block}.hist .dp .eqi small{display:block;color:#64748b;font-size:11px}
 .hist .dp .obs{background:#f8fafc;border:1px solid #eef1f5;border-radius:9px;padding:9px;font-size:12px;color:#64748b;min-height:40px}
 .hist .dp .btn{width:100%;border:0;border-radius:10px;padding:11px;font-size:13.5px;font-weight:700;cursor:pointer;margin-top:10px;display:flex;align-items:center;justify-content:center;gap:7px}
-.hist .dp .btn.tl{background:#0d9488;color:#fff}
+.hist .dp .btn.tl{background:#007A5E;color:#fff}
 .hist .dp .btn.gh{background:#fff;border:1px solid #d7dce3;color:#334155}
 .hist .dp .empty{color:#94a3b8;font-size:13px;text-align:center;padding:30px 10px}
 /* ===== Detalle completo (pantalla 2) ===== */
 .hist .det .dhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:16px}
 .hist .det .dtt{display:flex;gap:12px;align-items:center}
-.hist .det .dtt .tk{width:46px;height:46px;border-radius:12px;background:#e9f7f4;color:#0d9488;display:flex;align-items:center;justify-content:center;font-size:22px}
+.hist .det .dtt .tk{width:46px;height:46px;border-radius:12px;background:#e9f7f4;color:#007A5E;display:flex;align-items:center;justify-content:center;font-size:22px}
 .hist .det .dtt h1{margin:0;font-size:21px;font-weight:800}
 .hist .det .dtt p{margin:2px 0 0;color:#64748b;font-size:12.5px}
 .hist .det .dbtns{display:flex;gap:8px;flex-wrap:wrap}
 .hist .det .b{height:38px;border:1px solid #d7dce3;background:#fff;border-radius:9px;padding:0 13px;font-size:12.5px;font-weight:700;cursor:pointer;color:#334155;display:flex;align-items:center;gap:7px}
-.hist .det .b.tl{background:#0d9488;border-color:#0d9488;color:#fff}
+.hist .det .b.tl{background:#007A5E;border-color:#007A5E;color:#fff}
 .hist .det .stp{display:flex;align-items:center;background:#fff;border:1px solid #eceff4;border-radius:14px;padding:16px;gap:6px;margin-bottom:14px;overflow-x:auto}
 .hist .det .stp .st{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:120px;flex:1}
-.hist .det .stp .st .c{width:40px;height:40px;border-radius:50%;background:#e9f7f4;color:#0d9488;display:flex;align-items:center;justify-content:center;font-size:18px;position:relative}
+.hist .det .stp .st .c{width:40px;height:40px;border-radius:50%;background:#e9f7f4;color:#007A5E;display:flex;align-items:center;justify-content:center;font-size:18px;position:relative}
 .hist .det .stp .st .c .chk{position:absolute;right:-3px;bottom:-3px;width:17px;height:17px;border-radius:50%;background:#16a34a;color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;border:2px solid #fff}
 .hist .det .stp .st .t{font-weight:700;font-size:12.5px}
 .hist .det .stp .st .d{font-size:11px;color:#64748b;text-align:center}
@@ -1659,12 +1673,12 @@ const DEV_CSS = `
 .dev .k.p{background:#f3eefe}.dev .k.p .ic{background:#e7ddfb;color:#7c3aed}.dev .k.p .vl{color:#7c3aed}
 .dev .tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
 .dev .tabs button{border:1px solid #e6e9ef;background:#fff;border-radius:10px;padding:9px 16px;font-size:13px;font-weight:700;color:#334155;cursor:pointer;display:flex;align-items:center;gap:7px}
-.dev .tabs button.on{background:#0d9488;border-color:#0d9488;color:#fff}
+.dev .tabs button.on{background:#007A5E;border-color:#007A5E;color:#fff}
 .dev .devgrid{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:14px;align-items:start}
 @media(max-width:1250px){.dev .devgrid{grid-template-columns:1fr}}
 .dev .cdot{display:inline-flex;align-items:center;gap:6px;font-size:12.5px}
 .dev .cdot .d{width:8px;height:8px;border-radius:50%}
-.dev .ab2{border:1px solid #cdeee8;background:#eafaf6;color:#0d9488;border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.dev .ab2{border:1px solid #cdeee8;background:#eafaf6;color:#007A5E;border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
 .dev .ab2.gh{background:#fff;border-color:#e6e9ef;color:#475569}
 /* Panel Devolución rápida */
 .dev .qr{background:#fff;border:1px solid #eceff4;border-radius:14px;padding:16px;position:sticky;top:12px}
@@ -1675,14 +1689,14 @@ const DEV_CSS = `
 .dev .qr .seg2 button{flex:1;border:0;background:transparent;border-radius:8px;padding:8px;font-size:12.5px;font-weight:700;color:#475569;cursor:pointer}
 .dev .qr .seg2 button.on{background:#0f172a;color:#fff}
 .dev .qr .scan{border:2px dashed #cbd5e1;border-radius:12px;padding:20px;text-align:center;color:#64748b;font-size:12.5px;margin-bottom:12px}
-.dev .qr .scan .fr{font-size:26px;color:#0d9488}
+.dev .qr .scan .fr{font-size:26px;color:#007A5E}
 .dev .qr .rcard{border:1px solid #e6e9ef;border-radius:11px;padding:11px;display:flex;gap:10px;align-items:flex-start;margin-bottom:12px}
 .dev .qr .rcard .ri{width:34px;height:34px;border-radius:9px;background:#eef2f7;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
 .dev .qr .rcard b{font-size:13px}.dev .qr .rcard small{display:block;color:#64748b;font-size:11.5px}
 .dev .qr .sect{font-size:12.5px;font-weight:800;margin:12px 0 7px;display:flex;justify-content:space-between;align-items:center}
 .dev .qr .chk{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:12.5px;border-bottom:1px solid #f3f5f8}
 .dev .qr .chk .cb{width:20px;height:20px;border-radius:6px;background:#16a34a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;flex:0 0 auto}
-.dev .qr .cnt{font-size:11px;font-weight:700;color:#0d9488;background:#eafaf6;border-radius:999px;padding:2px 9px}
+.dev .qr .cnt{font-size:11px;font-weight:700;color:#007A5E;background:#eafaf6;border-radius:999px;padding:2px 9px}
 .dev .qr .frow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
 .dev .qr label{font-size:11px;color:#64748b;display:block;margin-bottom:3px}
 .dev .qr select,.dev .qr textarea{width:100%;box-sizing:border-box;border:1px solid #d7dce3;border-radius:9px;padding:8px 10px;font-size:12.5px;font-family:inherit}
@@ -1698,7 +1712,7 @@ const DEV_CSS = `
 .dev .qr .conf .o{display:inline-flex;align-items:center;gap:6px;color:#334155}
 .dev .qr .qbtns{display:flex;gap:8px;margin-top:12px}
 .dev .qr .qbtns button{flex:1;border-radius:10px;padding:10px;font-size:12.5px;font-weight:700;cursor:pointer;border:1px solid #d7dce3;background:#fff;color:#334155;display:flex;align-items:center;justify-content:center;gap:6px}
-.dev .qr .qbtns button.tl{background:#0d9488;border-color:#0d9488;color:#fff}
+.dev .qr .qbtns button.tl{background:#007A5E;border-color:#007A5E;color:#fff}
 .dev .qr .qbtns button.wr{background:#fff7ed;border-color:#fed7aa;color:#c2410c}
 .dev .qr .empty{color:#94a3b8;font-size:12.5px;text-align:center;padding:20px 8px}
 .dev . hd2{}
@@ -1759,7 +1773,7 @@ function renderDev() {
   const sede = (ME.sedes && (ME.sedes.find(s => s.id === SEDE) || {}).nombre) || 'Sede activa';
   $('#devRoot').innerHTML = `
     <div class="hhd"><div><h1>Devoluciones</h1><p>Control de devoluciones, estado de equipos y cierre de préstamos.</p></div>
-      <button class="b tl" id="dvProg" style="height:40px;border:1px solid #0d9488;background:#0d9488;color:#fff;border-radius:10px;padding:0 14px;font-size:13px;font-weight:700;cursor:pointer">📅 Devoluciones programadas</button></div>
+      <button class="b tl" id="dvProg" style="height:40px;border:1px solid #007A5E;background:#007A5E;color:#fff;border-radius:10px;padding:0 14px;font-size:13px;font-weight:700;cursor:pointer">📅 Devoluciones programadas</button></div>
     <div class="kpis">
       <div class="k b ${D.fKpi === 'hoy' ? 'sel' : ''}" data-kpi="hoy"><div class="ic">📦</div><div><div class="lb">Devoluciones de hoy</div><div class="vl">${k.hoy}</div><div class="sb">Programadas</div></div></div>
       <div class="k g ${D.fKpi === 'pendientes' ? 'sel' : ''}" data-kpi="pendientes"><div class="ic">✅</div><div><div class="lb">Pendientes</div><div class="vl">${k.pendientes}</div><div class="sb">Por procesar</div></div></div>
@@ -1925,7 +1939,7 @@ const DEVPROG_CSS = `
 .dprog .calbar .nav button{width:30px;height:30px;border:1px solid #e6e9ef;background:#fff;border-radius:8px;cursor:pointer}
 .dprog .calbar .seg{display:flex;background:#eef2f7;border-radius:9px;padding:3px}
 .dprog .calbar .seg button{border:0;background:transparent;padding:6px 16px;border-radius:7px;font-size:12.5px;font-weight:700;color:#475569;cursor:pointer}
-.dprog .calbar .seg button.on{background:#0d9488;color:#fff}
+.dprog .calbar .seg button.on{background:#007A5E;color:#fff}
 .dprog .calbar .sede{margin-left:auto;border:1px solid #d7dce3;border-radius:9px;padding:7px 10px;font-size:12.5px;background:#fff;min-width:200px}
 .dprog .tlwrap{display:grid;grid-template-columns:150px minmax(0,1fr) 180px;gap:12px;background:#fff;border:1px solid #eceff4;border-radius:14px;padding:14px;margin-bottom:12px}
 @media(max-width:1100px){.dprog .tlwrap{grid-template-columns:1fr}}
@@ -1957,10 +1971,10 @@ const DEVPROG_CSS = `
 .dprog .filt .fg{display:flex;flex-direction:column;gap:3px;min-width:150px}
 .dprog .filt .fg label{font-size:11px;color:#64748b}
 .dprog .filt select{height:38px;border:1px solid #d7dce3;border-radius:9px;padding:8px 10px;font-size:13px;background:#fff;font-family:inherit}
-.dprog .filt .clr{margin-left:auto;color:#0d9488;font-size:13px;font-weight:700;cursor:pointer;padding-bottom:8px}
+.dprog .filt .clr{margin-left:auto;color:#007A5E;font-size:13px;font-weight:700;cursor:pointer;padding-bottom:8px}
 .dprog .ptabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .dprog .ptabs button{border:1px solid #e6e9ef;background:#fff;border-radius:10px;padding:10px 16px;font-size:12.5px;font-weight:700;cursor:pointer;color:#475569;display:flex;align-items:center;gap:7px}
-.dprog .ptabs button.on{background:#0d9488;border-color:#0d9488;color:#fff}
+.dprog .ptabs button.on{background:#007A5E;border-color:#007A5E;color:#fff}
 .dprog .ptabs button.on.r{background:#dc2626;border-color:#dc2626}
 .dprog .ptabs button.on.y{background:#d97706;border-color:#d97706}
 .dprog .pgrid{display:grid;grid-template-columns:minmax(0,1fr) 620px;gap:12px;align-items:start}
@@ -1990,10 +2004,10 @@ const DEVPROG_CSS = `
 .dprog thead th{text-align:left;font-size:11px;color:#64748b;font-weight:700;padding:11px 12px;border-bottom:1px solid #eef1f5;white-space:nowrap}
 .dprog tbody td{padding:10px 12px;border-bottom:1px solid #f3f5f8;font-size:12.5px;vertical-align:middle}
 .dprog tbody tr{cursor:pointer}.dprog tbody tr:hover{background:#f8fafc}
-.dprog tbody tr.sel{background:#e9f7f4;box-shadow:inset 3px 0 0 #0d9488}
+.dprog tbody tr.sel{background:#e9f7f4;box-shadow:inset 3px 0 0 #007A5E}
 .dprog .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap}
 .dprog .acts{display:flex;gap:4px}
-.dprog .acts .rc{border:1px solid #0d9488;color:#0d9488;background:#fff;border-radius:8px;padding:5px 10px;font-size:11.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px}
+.dprog .acts .rc{border:1px solid #007A5E;color:#007A5E;background:#fff;border-radius:8px;padding:5px 10px;font-size:11.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px}
 .dprog .acts .ib{width:30px;height:30px;border:1px solid #e6e9ef;background:#fff;border-radius:8px;cursor:pointer;color:#475569}
 /* Detalle de devolución */
 .dprog .dp{background:#fff;border:1px solid #eceff4;border-radius:14px;padding:16px}
@@ -2018,7 +2032,7 @@ const DEVPROG_CSS = `
 .dprog .dp .rec .r{display:flex;gap:7px;margin:5px 0;color:#5b21b6}
 .dprog .dp .dbtns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
 .dprog .dp .dbtns button{border:1px solid #d7dce3;background:#fff;border-radius:9px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;color:#334155}
-.dprog .dp .dbtns button.tl{grid-column:1/-1;background:#0d9488;border-color:#0d9488;color:#fff}
+.dprog .dp .dbtns button.tl{grid-column:1/-1;background:#007A5E;border-color:#007A5E;color:#fff}
 .dprog .sug{background:#fff;border:1px solid #eceff4;border-radius:12px;padding:12px 14px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:12px;font-size:12px;color:#334155}
 .dprog .sug .t{font-weight:800;display:flex;align-items:center;gap:7px}
 .dprog .sug .it{display:flex;align-items:center;gap:6px}
@@ -2263,7 +2277,7 @@ function registrarDevolucionRapida(r) {
         <option value="bueno">En buen estado</option><option value="con_danio">Con daño</option><option value="inoperativo">Inoperativo / faltante</option></select></div>
     <div style="margin:8px 0"><label style="font-size:12px;color:#475569">Observaciones</label>
       <textarea id="mrObs" style="width:100%;min-height:60px;border:1px solid #d7dce3;border-radius:9px;padding:8px;margin-top:4px" placeholder="Opcional…"></textarea></div>
-    <button class="btn full" id="mrOk" style="margin-top:6px;width:100%;border:0;border-radius:10px;padding:11px;background:#0d9488;color:#fff;font-weight:700;cursor:pointer">✔️ Registrar devolución</button>`);
+    <button class="btn full" id="mrOk" style="margin-top:6px;width:100%;border:0;border-radius:10px;padding:11px;background:#007A5E;color:#fff;font-weight:700;cursor:pointer">✔️ Registrar devolución</button>`);
   $('#mrOk').onclick = async () => {
     try {
       const resp = await api('/recibir', { method: 'POST', body: { prestamo_id: Number(r.id), condicion_retorno: $('#mrEst').value, observacion: ($('#mrObs').value || '').trim() || null } });
