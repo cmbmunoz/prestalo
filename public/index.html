@@ -22,6 +22,21 @@
 
 <!-- LOGIN -->
 <div id="login" class="login-wrap">
+  <div class="login-inner">
+  <div class="login-hero">
+    <div class="login-hero-brand">
+      <div class="login-hero-logo"><img src="santotomas.png" alt="Santo Tomás"></div>
+      <div><small>SANTO TOMÁS</small><b>Pañol 2.0</b></div>
+    </div>
+    <span class="login-hero-chip"><span class="dot"></span>Red de Pañoles &amp; Laboratorios</span>
+    <p class="login-hero-desc">Plataforma oficial de reservas, entrega inmediata y custodia técnica para equipos audiovisuales, cómputo y herramientas formativas.</p>
+    <div class="login-hero-features">
+      <div class="lhf"><span class="ic material-symbols-outlined">qr_code_scanner</span><div><b>Préstamos con QR ágil</b><small>Validación presencial en mostrador</small></div></div>
+      <div class="lhf"><span class="ic material-symbols-outlined">inventory_2</span><div><b>Stock e inventario al instante</b><small>Disponibilidad en sedes nacionales</small></div></div>
+      <div class="lhf"><span class="ic material-symbols-outlined">notifications_active</span><div><b>Notificaciones y alertas</b><small>Tiempos de devolución e historial</small></div></div>
+    </div>
+    <div class="login-hero-foot"><span><span class="ic material-symbols-outlined">verified_user</span> Sistema Seguro IPST</span><b>VERSIÓN 2.4</b></div>
+  </div>
   <div class="login-card">
     <img class="logo-img" src="santotomas.png" alt="Instituto Profesional Santo Tomás">
     <h1>Pañol 2.0</h1>
@@ -64,6 +79,7 @@
       </div>
     </div>
   </div>
+  </div>
 </div>
 
 <!-- APP -->
@@ -72,12 +88,15 @@
     <aside class="side">
       <div class="side-brand">
         <div class="side-logo"><img src="santotomas.png" alt="Santo Tomás"></div>
-        <div><b>Pañol 2.0</b><small id="whoRole">—</small></div>
+        <div><b>Santo Tomás</b><small id="whoRole">—</small></div>
       </div>
       <nav class="nav" id="nav"></nav>
       <div class="side-foot">
-        <div class="side-inst"><img src="santotomas.png" alt=""><span>Instituto Santo Tomás</span></div>
-        <button class="side-out" id="btnLogout">Cerrar sesión</button>
+        <button class="side-out" id="btnLogout"><span class="ic material-symbols-outlined">logout</span><span>Cerrar sesión</span></button>
+        <div class="side-terminal" id="sideTerminal" hidden>
+          <span class="dot"></span>
+          <div><small>Terminal local</small><b id="sideSede">—</b></div>
+        </div>
       </div>
     </aside>
     <div class="content">

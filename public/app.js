@@ -247,7 +247,8 @@ async function boot() {
   $('#login').classList.add('hidden');
   $('#app').classList.remove('hidden');
   $('#whoName').textContent = ME.user.nombre;
-  $('#whoRole').textContent = ({alumno:'Alumno',docente:'Docente',panolero:'Pañolero',jefe_panol:'Jefe de Pañol',admin:'Administrador'})[ME.user.rol];
+  const rolLabel = ({alumno:'Alumno',docente:'Docente',panolero:'Pañolero',jefe_panol:'Jefe de Pañol',admin:'Administrador'})[ME.user.rol] || '';
+  $('#whoRole').textContent = ('Pañol 2.0 · ' + rolLabel).toUpperCase();
   await buildSedeSelector();
   buildNav();
   render(firstView(ME.user.rol));
@@ -260,10 +261,14 @@ async function buildSedeSelector() {
   try {
     const s = await api('/sedes');
     SEDE = (s.sede_activa || (s.actual && s.actual.id)) || null;
+    // Píldora "Terminal local" en el pie del menú (nombre de la sede activa)
+    const nomSede = id => { const x = (s.sedes || []).find(y => y.id === id); return x ? x.nombre : (s.actual && s.actual.nombre) || ''; };
+    const setTerminal = id => { const t = $('#sideTerminal'); const n = nomSede(id); if (t && n) { $('#sideSede').textContent = n; t.hidden = false; } };
+    setTerminal(SEDE);
     // Selector de sede para cualquier usuario multi-sede (admin y docente con asignaturas en varias sedes)
     if (host && s.sedes && s.sedes.length > 1) {
       host.innerHTML = `<select id="sedeSel" title="Sede activa">${s.sedes.map(x => `<option value="${x.id}" ${x.id === SEDE ? 'selected' : ''}>${escD(x.nombre)}</option>`).join('')}</select>`;
-      $('#sedeSel').onchange = (e) => { SEDE = Number(e.target.value); PANEL_SEDE = String(SEDE); buildNav(); render(firstView(ME.user.rol)); toast('Sede cambiada'); };
+      $('#sedeSel').onchange = (e) => { SEDE = Number(e.target.value); PANEL_SEDE = String(SEDE); setTerminal(SEDE); buildNav(); render(firstView(ME.user.rol)); toast('Sede cambiada'); };
     }
   } catch (e) { /* sede opcional */ }
 }
