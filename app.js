@@ -790,9 +790,12 @@ app.get('/api/panol/dashboard', auth, requireRole(...OPERACION), wrap(async (req
          HAVING count(*) FILTER (WHERE e.estado='disponible') <= 1) s`);
   } catch (e) { /* tolerante */ }
 
+  // "Entregas programadas" = reservas confirmadas por entregar (coincide con el detalle,
+  // que lista solo 'confirmada'). Las ya entregadas pasan a 'en_uso' y se ven en
+  // "Entregas confirmadas"; incluirlas aquí descuadraba el panel contra el detalle.
   const rng = (ini, fin) => one(
     `SELECT count(*)::int n FROM reserva r LEFT JOIN equipo e ON e.id=r.equipo_id JOIN usuario u ON u.rut=r.usuario_rut
-     WHERE r.estado IN ('confirmada','en_uso') AND COALESCE(e.entidad_id,u.entidad_id)=$1
+     WHERE r.estado='confirmada' AND COALESCE(e.entidad_id,u.entidad_id)=$1
        AND r.fecha_inicio >= ${ini} AND r.fecha_inicio < ${fin}`);
   const prog_hoy    = await rng("current_date", "current_date + interval '1 day'");
   const prog_semana = await rng("current_date", "current_date + interval '7 day'");               // semana móvil (7 días desde hoy)
